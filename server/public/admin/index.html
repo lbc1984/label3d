@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<title>Dashboard quản trị</title>
+<link rel="stylesheet" href="admin.css">
+</head>
+<body>
+
+<div class="topbar">
+  <h1>Dashboard quản trị — Font → 3D</h1>
+  <div>
+    <span class="who" id="whoAmI"></span>
+    <button class="btn" id="logoutBtn">Đăng xuất</button>
+  </div>
+</div>
+
+<div class="layout">
+  <nav class="sidenav">
+    <button data-section="limits" class="active">Giới hạn thông số</button>
+    <button data-section="colors">Màu nhựa</button>
+    <button data-section="fonts">Font chữ</button>
+    <button data-section="password">Đổi mật khẩu</button>
+    <button data-section="customer">Xem trang khách &#8599;</button>
+  </nav>
+
+  <div class="content">
+
+    <section class="panel-section active" id="section-limits">
+      <h2>Giới hạn thông số</h2>
+      <p class="desc">Giới hạn min/max/mặc định cho các thanh trượt bên trang khách — dùng để đảm bảo an toàn kỹ thuật in (chặn khách chỉnh ra giá trị không in được). Mỗi giá trị vẫn bị chặn theo một khoảng an toàn tuyệt đối phía server dù bạn nhập gì ở đây.</p>
+      <table class="grid" id="limitsTable">
+        <thead>
+          <tr>
+            <th>Thông số</th><th>Nhãn hiển thị</th><th>Min</th><th>Max</th>
+            <th>Bước nhảy</th><th>Mặc định</th><th>Đơn vị</th><th></th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <div class="error-msg" id="limitsMsg"></div>
+    </section>
+
+    <section class="panel-section" id="section-colors">
+      <h2>Màu nhựa</h2>
+      <p class="desc">Danh sách màu nhựa thật đang có, nhóm theo dòng sản phẩm (series). Tắt "Hoạt động" để ẩn khỏi trang khách mà không cần xoá hẳn.</p>
+      <div id="colorsContainer"></div>
+      <div class="series-block">
+        <h3>Thêm series mới</h3>
+        <div class="add-row">
+          <div><label>Tên series</label><input type="text" id="newSeriesName" placeholder="VD: PLA Basic"></div>
+          <div><label>Tên màu</label><input type="text" id="newSeriesColorName" placeholder="VD: Jade White"></div>
+          <div style="flex:0 0 60px;"><label>Màu</label><input type="color" id="newSeriesColorHex" value="#ffffff"></div>
+          <div style="flex:0 0 auto;"><button class="btn primary" id="addSeriesBtn">Thêm</button></div>
+        </div>
+      </div>
+      <div class="error-msg" id="colorsMsg"></div>
+    </section>
+
+    <section class="panel-section" id="section-fonts">
+      <h2>Font chữ</h2>
+      <p class="desc">Upload font .ttf/.otf để khách chọn dùng. File được kiểm tra định dạng và thử phân tích như 1 font thật trước khi lưu.</p>
+
+      <div class="upload-form">
+        <div>
+          <label>Vai trò</label>
+          <select id="uploadRole">
+            <option value="text">Font CHỮ</option>
+            <option value="emoji">Font EMOJI</option>
+          </select>
+        </div>
+        <div class="grow-2">
+          <label>Tên hiển thị</label>
+          <input type="text" id="uploadName" placeholder="VD: Roboto Bold">
+        </div>
+        <div>
+          <label>File (.ttf/.otf)</label>
+          <input type="file" id="uploadFile" accept=".ttf,.otf">
+        </div>
+        <div style="flex:0 0 auto;">
+          <button class="btn primary" id="uploadBtn">Upload</button>
+        </div>
+      </div>
+      <div class="error-msg" id="uploadMsg"></div>
+
+      <h3 style="font-size:13px;color:#f2a65a;">Font CHỮ</h3>
+      <table class="grid" id="fontsTextTable">
+        <thead><tr><th>Tên hiển thị</th><th>Định dạng</th><th>Mặc định</th><th>Hoạt động</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+
+      <h3 style="font-size:13px;color:#f2a65a;margin-top:22px;">Font EMOJI</h3>
+      <table class="grid" id="fontsEmojiTable">
+        <thead><tr><th>Tên hiển thị</th><th>Định dạng</th><th>Mặc định</th><th>Hoạt động</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <div class="error-msg" id="fontsMsg"></div>
+    </section>
+
+    <section class="panel-section" id="section-password">
+      <h2>Đổi mật khẩu</h2>
+      <form class="password-form" id="passwordForm">
+        <label>Mật khẩu hiện tại</label>
+        <input type="password" id="currentPassword" autocomplete="current-password" required>
+        <label>Mật khẩu mới (tối thiểu 8 ký tự)</label>
+        <input type="password" id="newPassword" autocomplete="new-password" required minlength="8">
+        <label>Nhập lại mật khẩu mới</label>
+        <input type="password" id="confirmPassword" autocomplete="new-password" required minlength="8">
+        <button type="submit" class="btn primary" style="margin-top:16px;">Đổi mật khẩu</button>
+        <div class="error-msg" id="passwordMsg"></div>
+      </form>
+    </section>
+
+  </div>
+</div>
+
+<script src="admin.js"></script>
+</body>
+</html>

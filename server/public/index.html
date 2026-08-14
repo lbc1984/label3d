@@ -1,0 +1,1795 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<title>Font → 3D Demo (opentype.js + three.js)</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; font-family: -apple-system, "Segoe UI", Roboto, sans-serif; background: #14161a; color: #eee; }
+  #panel {
+    position: fixed; top: 0; left: 0; width: 420px; height: 100%;
+    background: #1c1f24; padding: 20px; box-sizing: border-box;
+    overflow-y: auto; border-right: 1px solid #2c2f35;
+  }
+  #panel h2 { font-size: 16px; margin-top: 0; color: #f2a65a; }
+  #panel label { display: block; margin-top: 14px; font-size: 13px; color: #aaa; }
+  #panel input[type=text], #panel input[type=file], #panel select {
+    width: 100%; padding: 6px 8px; margin-top: 4px; box-sizing: border-box;
+    background: #101216; color: #eee; border: 1px solid #333; border-radius: 4px;
+  }
+  #panel input[type=range] { width: 100%; margin-top: 4px; }
+  /* Chỉ áp cho nút hành động là con trực tiếp của panel (vd nút Xuất STL).
+     Nếu để '#panel button' thì rule ID này sẽ đè lên nút trong lưới emoji và
+     bảng màu (class không thắng được ID), làm chúng bị ép rộng 100% và nền cam. */
+  #panel > button {
+    width: 100%; margin-top: 16px; padding: 10px; background: #f2a65a; color: #111;
+    border: none; border-radius: 4px; font-weight: 600; cursor: pointer;
+  }
+  #panel > button:hover { background: #ffb96f; }
+  #panel .hint { font-size: 11px; color: #777; margin-top: 6px; line-height: 1.4; }
+  #panel details { margin-top: 10px; }
+  #panel summary {
+    cursor: pointer; font-size: 13px; color: #f2a65a; padding: 6px 0;
+    user-select: none;
+  }
+  .emoji-grid {
+    /* Tự chia cột theo chỗ thực còn lại: nhờ vậy khung có thanh trượt và khung không có
+       vẫn tự vừa khít, không bị bóp cột cuối hay so le giữa hai khung. */
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(46px, 1fr));
+    gap: 6px; box-sizing: border-box; width: 100%;
+    margin-top: 6px; background: #101216; border: 1px solid #2c2f35;
+    border-radius: 4px; padding: 8px;
+  }
+  .emoji-grid.scroll {
+    max-height: 320px; overflow-y: auto; overflow-x: hidden;
+    scrollbar-gutter: stable;      /* chừa sẵn chỗ cho thanh trượt, lề vẫn cân hai bên */
+    scrollbar-width: thin;         /* Firefox */
+    scrollbar-color: #4a505a #101216;
+  }
+  /* thanh trượt mảnh, không đè lên nút emoji (Chrome/Edge/Safari) */
+  .emoji-grid.scroll::-webkit-scrollbar { width: 8px; }
+  .emoji-grid.scroll::-webkit-scrollbar-track { background: #101216; border-radius: 4px; }
+  .emoji-grid.scroll::-webkit-scrollbar-thumb {
+    background: #4a505a; border-radius: 4px; border: 2px solid #101216;
+  }
+  .emoji-grid.scroll::-webkit-scrollbar-thumb:hover { background: #5f6773; }
+  .emoji-grid button {
+    width: 100%; min-width: 0; margin: 0; padding: 0; background: transparent;
+    border: 1px solid transparent; border-radius: 4px; cursor: pointer; color: #eee;
+    font-size: 34px; line-height: 1; font-family: inherit;
+    aspect-ratio: 1 / 1;
+    display: flex; align-items: center; justify-content: center;
+    text-align: center; overflow: hidden;
+  }
+  .emoji-grid button:hover { background: #2f353d; border-color: #f2a65a; }
+  #emojiGroupSelect { margin-top: 8px; }
+  #emojiSearch { margin-top: 6px; }
+  .color-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+  .color-swatch-btn {
+    width: 32px; height: 30px; flex: none; margin: 0; padding: 0; border-radius: 5px;
+    border: 1px solid #666; cursor: pointer;
+    box-shadow: inset 0 0 0 1px rgba(0,0,0,.35);
+  }
+  .color-swatch-btn.open { border-color: #f2a65a; box-shadow: 0 0 0 2px rgba(242,166,90,.35); }
+  .color-name { flex: 1; min-width: 0; font-size: 12px; color: #ccc;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .color-palette {
+    margin-top: 8px; padding: 8px; box-sizing: border-box;
+    background: #101216; border: 1px solid #2c2f35; border-radius: 4px;
+    max-height: 300px; overflow-y: auto; overflow-x: hidden;
+    scrollbar-gutter: stable; scrollbar-width: thin; scrollbar-color: #4a505a #101216;
+  }
+  .color-palette::-webkit-scrollbar { width: 8px; }
+  .color-palette::-webkit-scrollbar-track { background: #101216; border-radius: 4px; }
+  .color-palette::-webkit-scrollbar-thumb { background: #4a505a; border-radius: 4px; border: 2px solid #101216; }
+  .color-palette .series-title {
+    position: sticky; top: 0; background: #101216; color: #f2a65a;
+    font-size: 11px; font-weight: 600; padding: 6px 0 4px;
+    border-bottom: 1px solid #23272e; margin-bottom: 5px;
+  }
+  .swatch-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(30px, 1fr));
+    gap: 5px; margin-bottom: 6px;
+  }
+  .swatch-grid button {
+    width: 100%; aspect-ratio: 1/1; margin: 0; padding: 0; border-radius: 4px;
+    border: 1px solid #555; cursor: pointer;
+    box-shadow: inset 0 0 0 1px rgba(0,0,0,.3);
+  }
+  .swatch-grid button:hover { transform: scale(1.15); border-color: #fff; }
+  .swatch-grid button.sel { border: 2px solid #f2a65a; box-shadow: 0 0 0 2px rgba(242,166,90,.4); }
+  .emoji-sections {
+    max-height: 340px; overflow-y: auto; overflow-x: hidden;
+    scrollbar-gutter: stable; scrollbar-width: thin; scrollbar-color: #4a505a #101216;
+    background: #101216; border: 1px solid #2c2f35; border-radius: 4px;
+    padding: 0 8px 8px; margin-top: 6px; box-sizing: border-box;
+  }
+  .emoji-sections::-webkit-scrollbar { width: 8px; }
+  .emoji-sections::-webkit-scrollbar-track { background: #101216; border-radius: 4px; }
+  .emoji-sections::-webkit-scrollbar-thumb { background: #4a505a; border-radius: 4px; border: 2px solid #101216; }
+  .emoji-group-title {
+    position: sticky; top: 0; z-index: 1;
+    background: #101216; color: #f2a65a; font-size: 11px; font-weight: 600;
+    padding: 8px 0 4px; border-bottom: 1px solid #23272e; margin-bottom: 4px;
+  }
+  .emoji-sections .emoji-grid {
+    border: none; background: transparent; padding: 0; margin: 0 0 4px;
+  }
+  #status { font-size: 12px; margin-top: 12px; color: #6ec36e; min-height: 32px; }
+  #status.err { color: #e06c6c; }
+  #canvas-wrap { position: fixed; top: 0; left: 420px; right: 0; height: 100%; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+
+<div id="panel">
+  <h2>Font → 3D (Demo)</h2>
+
+  <label>Nhập chữ / emoji</label>
+  <input type="text" id="textInput" value="👍Cường" placeholder="Nhập tên hoặc emoji">
+
+  <details>
+    <summary>Chọn emoji theo chủ đề (<span id="emojiCount">…</span>)</summary>
+    <select id="emojiGroupSelect" class="no-render"></select>
+    <input type="text" id="emojiSearch" placeholder="Tìm theo tên tiếng Anh: heart, cat, car…">
+    <div class="emoji-sections" id="emojiAll"></div>
+  </details>
+
+  <details open>
+    <summary>Chọn font</summary>
+    <label>Font CHỮ</label>
+    <select id="textFontSelect"></select>
+    <label>Font EMOJI</label>
+    <select id="emojiFontSelect"></select>
+    <div class="hint">Danh sách font do quản trị viên cấu hình sẵn. Có thể tải font riêng bên dưới để dùng tạm cho phiên này (không được lưu lại).</div>
+    <label>Tải font CHỮ riêng (.ttf/.otf)</label>
+    <input type="file" id="textFontFile" accept=".ttf,.otf,.woff">
+    <label>Tải font EMOJI riêng (.ttf/.otf)</label>
+    <input type="file" id="emojiFontFile" accept=".ttf,.otf,.woff">
+  </details>
+
+  <label>Khoảng cách chữ ↔ emoji: <span id="gapVal">2</span> mm</label>
+  <input type="range" id="gap" min="-100" max="20" value="2" step="0.5">
+  <div class="hint">Khoảng hở thêm vào mỗi lần chuyển giữa chữ và emoji (có thể để âm nếu muốn chúng lấn vào nhau).</div>
+
+  <label>Độ đùn (extrude depth): <span id="depthVal">2</span> mm</label>
+  <input type="range" id="depth" min="1" max="20" value="2">
+
+  <label>Cỡ CHỮ (font size): <span id="textSizeVal">40</span></label>
+  <input type="range" id="textFontSize" min="10" max="100" value="40">
+
+  <label>Cỡ EMOJI (font size): <span id="emojiSizeVal">80</span></label>
+  <input type="range" id="emojiFontSize" min="10" max="100" value="80">
+
+  <label>Chỉnh tinh chiều cao emoji: <span id="emojiNudgeVal">14.5</span> mm</label>
+  <input type="range" id="emojiNudge" min="-100" max="100" value="14.5" step="0.5">
+  <div class="hint">Emoji đã tự căn giữa theo dòng chữ nên đổi cỡ không bị lệch; thanh này chỉ dùng khi muốn nhích thêm.</div>
+
+  <label>Bevel (bo cạnh)</label>
+  <select id="bevel">
+    <option value="0">Không</option>
+    <option value="1" selected>Nhẹ</option>
+  </select>
+
+  <details open>
+    <summary>Màu nhựa (Bambu Lab)</summary>
+
+    <label>Màu CHỮ</label>
+    <div class="color-row" id="rowText">
+      <button type="button" class="color-swatch-btn" id="swText"></button>
+      <span class="color-name" id="nmText">—</span>
+    </div>
+
+    <label>Màu EMOJI</label>
+    <div class="color-row" id="rowEmoji">
+      <button type="button" class="color-swatch-btn" id="swEmoji"></button>
+      <span class="color-name" id="nmEmoji">—</span>
+    </div>
+
+    <label>Màu NỀN</label>
+    <div class="color-row" id="rowBg">
+      <button type="button" class="color-swatch-btn" id="swBg"></button>
+      <span class="color-name" id="nmBg">—</span>
+    </div>
+
+    <div id="colorPalette" class="color-palette" hidden></div>
+
+    <div class="hint">Bấm ô màu để mở bảng chọn. Mã màu lấy theo bảng nhựa Bambu Lab nhưng chỉ để xem trước — màu in thật nên đối chiếu với cuộn nhựa.</div>
+  </details>
+
+  <label style="margin-top:20px; border-top:1px solid #2c2f35; padding-top:14px;">
+    <input type="checkbox" id="bgEnabled" checked style="width:auto; margin-right:6px;">
+    Thêm nền (background) theo viền chữ + emoji
+  </label>
+
+  <label>Offset nền (khoảng phình ra so với viền chữ): <span id="bgOffsetVal">3</span> mm</label>
+  <input type="range" id="bgOffset" min="0" max="30" value="3" step="0.5">
+
+  <label>Độ dày nền: <span id="bgDepthVal">4</span> mm</label>
+  <input type="range" id="bgDepth" min="0.5" max="10" value="4" step="0.5">
+  <div class="hint">Nền sẽ tự "phình" theo đúng hình dạng chữ + emoji (không phải hình chữ nhật), khoảng offset là bề rộng viền phình thêm ra mọi phía.</div>
+
+  <label style="margin-top:18px;">
+    <input type="checkbox" id="ringEnabled" checked style="width:auto; margin-right:6px;">
+    Đục lỗ móc chìa khoá
+  </label>
+
+  <label>Đường kính lỗ: <span id="ringHoleVal">6</span> mm</label>
+  <input type="range" id="ringHole" min="2" max="20" value="6" step="0.5">
+
+  <label>Độ dày thành lỗ: <span id="ringWallVal">2</span> mm</label>
+  <input type="range" id="ringWall" min="1" max="10" value="2" step="0.5">
+
+  <label>Cạnh gắn lỗ</label>
+  <select id="ringSide">
+    <option value="left" selected>Bên trái</option>
+    <option value="right">Bên phải</option>
+    <option value="top">Phía trên</option>
+    <option value="bottom">Phía dưới</option>
+  </select>
+
+  <label>Vị trí trượt trên cạnh: <span id="ringPosVal">50</span>%</label>
+  <input type="range" id="ringPos" min="0" max="100" value="50" step="1">
+  <div class="hint">0% = đầu này, 100% = đầu kia của cạnh đã chọn.</div>
+
+  <label>Ăn sâu vào nền thêm: <span id="ringDepthVal">0</span> mm</label>
+  <input type="range" id="ringInset" min="0" max="20" value="0" step="0.5">
+  <div class="hint">Vòng khuyên được hàn liền vào nền và đùn cùng độ dày nền, nên in ra là một khối liền.</div>
+
+  <button id="exportBtn" style="background:#4a90d9;color:#fff;">Xuất STL</button>
+
+  <label style="margin-top:16px;">
+    <input type="checkbox" id="imgDrawing" class="no-render" checked style="width:auto; margin-right:6px;">
+    Kèm bảng thông số (bản vẽ kỹ thuật)
+  </label>
+  <label>
+    <input type="checkbox" id="imgTransparent" class="no-render" style="width:auto; margin-right:6px;">
+    Ảnh nền trong suốt (PNG)
+  </label>
+  <label>Độ phân giải ảnh: <span id="imgScaleVal">2</span>×</label>
+  <input type="range" id="imgScale" min="1" max="4" value="2" step="1" class="no-render">
+
+  <button id="saveImgBtn" style="background:#3a9e6a;color:#fff;">Lưu ảnh PNG</button>
+
+  <div id="status">Đang tải cấu hình từ server...</div>
+</div>
+
+<div id="canvas-wrap"></div>
+
+<!-- three.js r128 (UMD) + addons + opentype.js, via jsdelivr (more reliable than unpkg on some networks) -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/exporters/STLExporter.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/opentype.js@1.3.4/dist/opentype.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/clipper-lib@6.4.2/clipper.js"></script>
+
+<script>
+// ===== Bảng màu nhựa Bambu Lab =====
+// Mã hex theo bảng màu Bambu Lab, dùng để xem trước — có thể lệch nhẹ so với nhựa thật.
+let BAMBU_COLORS = [
+  { series: 'PLA Basic', colors: [
+    ['Jade White', '#FFFFFF'], ['Beige', '#F7E6DE'], ['Gold', '#E4BD68'],
+    ['Silver', '#A6A9AA'], ['Gray', '#8E9089'], ['Light Gray', '#D1D3D5'],
+    ['Dark Gray', '#545454'], ['Black', '#000000'], ['Bronze', '#847D48'],
+    ['Brown', '#9D432C'], ['Cocoa Brown', '#6F5034'], ['Red', '#C12E1F'],
+    ['Maroon Red', '#9D2235'], ['Scarlet Red', '#DE4343'], ['Magenta', '#EC008C'],
+    ['Pink', '#F55A74'], ['Hot Pink', '#F5547C'], ['Orange', '#FF6A13'],
+    ['Pumpkin Orange', '#FF9016'], ['Yellow', '#F4EE2A'], ['Sunflower Yellow', '#FEC600'],
+    ['Lemon Yellow', '#F7D959'], ['Bambu Green', '#00AE42'], ['Mistletoe Green', '#3F8E43'],
+    ['Grass Green', '#61C680'], ['Cyan', '#0086D6'], ['Blue', '#0A2989'],
+    ['Cobalt Blue', '#0056B8'], ['Ice Blue', '#A3D8E1'], ['Blue Gray', '#5B6579'],
+    ['Purple', '#5E43B7'], ['Indigo Purple', '#482960']
+  ]},
+  { series: 'PLA Matte', colors: [
+    ['Ivory White', '#FFFFFF'], ['Bone White', '#CBC6B8'], ['Latte Brown', '#D3B7A7'],
+    ['Desert Tan', '#E8DBB7'], ['Lemon Yellow', '#F7D959'], ['Mandarin Orange', '#F99963'],
+    ['Sakura Pink', '#E8AFCF'], ['Lilac Purple', '#AE96D4'], ['Scarlet Red', '#DE4343'],
+    ['Dark Red', '#BB3D43'], ['Apple Green', '#C2E189'], ['Grass Green', '#61C680'],
+    ['Dark Green', '#68724D'], ['Ice Blue', '#A3D8E1'], ['Sky Blue', '#56B7E6'],
+    ['Marine Blue', '#0078BF'], ['Dark Blue', '#042F56'], ['Ash Gray', '#9B9EA0'],
+    ['Nardo Gray', '#757575'], ['Charcoal', '#000000'], ['Terracotta', '#B15533'],
+    ['Caramel', '#AE835B'], ['Dark Brown', '#7D6556'], ['Plum', '#950051'],
+    ['Mint', '#A6E6CB'], ['Grey', '#8E9089']
+  ]},
+  { series: 'PLA Silk', colors: [
+    ['Silk White', '#F8F8F8'], ['Silk Champagne', '#F7D5A6'], ['Silk Gold', '#F9B72C'],
+    ['Silk Candy Red', '#D02727'], ['Silk Pink', '#F3AFC5'], ['Silk Purple', '#8B49BA'],
+    ['Silk Blue', '#1F6FDD'], ['Silk Baby Blue', '#7FB8E0'], ['Silk Mint', '#5CC9A7'],
+    ['Silk Green', '#22B14C'], ['Silk Titan Gray', '#8B8C8D'], ['Silk Black', '#121212']
+  ]},
+  { series: 'PLA Metal', colors: [
+    ['Iron Gray', '#4A4A51'], ['Iridium Gold', '#B48E3D'], ['Copper Brown', '#9A4E2E'],
+    ['Nickel Silver', '#9DA3A6'], ['Oxide Green', '#3D6B5A']
+  ]},
+  { series: 'PETG / trong suốt', colors: [
+    ['Clear', '#EEF2F4'], ['Translucent Olive', '#748C45'], ['Translucent Teal', '#3B9C9C'],
+    ['Translucent Purple', '#8B6BB7'], ['Translucent Orange', '#F08C3A'],
+    ['Translucent Gray', '#B6BBBE'], ['Translucent Pink', '#F0A9C0']
+  ]},
+  { series: 'TPU / dẻo', colors: [
+    ['TPU White', '#F5F5F5'], ['TPU Black', '#1A1A1A'], ['TPU Red', '#C8202E'],
+    ['TPU Blue', '#1B57A6'], ['TPU Yellow', '#F2C31F'], ['TPU Neon Green', '#8ED12A']
+  ]}
+];
+
+// Màu đang dùng cho từng thành phần
+const COLORS = { text: '#E4BD68', emoji: '#0086D6', bg: '#8E9089' };
+
+let scene, camera, renderer, controls, currentGroup;
+let textFont = null, emojiFont = null;
+
+// Nhận diện ký tự có phải emoji/pictograph hay không (dùng Unicode property escape)
+function isEmojiChar(ch) {
+  try {
+    return /\p{Extended_Pictographic}/u.test(ch);
+  } catch (e) {
+    // fallback nếu trình duyệt cũ không hỗ trợ \p{} trong regex
+    const cp = ch.codePointAt(0);
+    return cp >= 0x1F000; // xấp xỉ: hầu hết emoji nằm từ khối này trở lên
+  }
+}
+const statusEl = document.getElementById('status');
+
+function setStatus(msg, isErr) {
+  statusEl.textContent = msg;
+  statusEl.className = isErr ? 'err' : '';
+  console.log('[status]', msg);
+}
+
+// Kiểm tra thư viện đã load thành công chưa (lỗi CDN/mạng là nguyên nhân phổ biến nhất)
+window.addEventListener('load', () => {
+  const missing = [];
+  if (typeof THREE === 'undefined') missing.push('three.js');
+  if (typeof opentype === 'undefined') missing.push('opentype.js');
+  if (typeof ClipperLib === 'undefined') missing.push('clipper-lib (chỉ ảnh hưởng tính năng nền offset, phần còn lại vẫn chạy được)');
+  if (missing.length) {
+    setStatus('LỖI: không load được thư viện: ' + missing.join(', ') + '. Kiểm tra kết nối mạng, hoặc mở Console (F12) xem chi tiết.', true);
+  }
+});
+
+// ---------- three.js scene setup ----------
+function initScene() {
+  const wrap = document.getElementById('canvas-wrap');
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x14161a);
+
+  camera = new THREE.PerspectiveCamera(45, wrap.clientWidth / wrap.clientHeight, 0.1, 5000);
+  camera.position.set(0, 40, 150);
+
+  // alpha: cho phép chụp ảnh nền trong suốt
+  // preserveDrawingBuffer: WebGL xoá đệm vẽ sau mỗi khung hình, không bật cờ này
+  // thì ảnh chụp từ canvas hay ra đen thui.
+  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+  renderer.setSize(wrap.clientWidth, wrap.clientHeight);
+  wrap.appendChild(renderer.domElement);
+
+  controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.target.set(0, 0, 0);
+
+  scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+  const dir1 = new THREE.DirectionalLight(0xffffff, 0.8);
+  dir1.position.set(100, 150, 200);
+  scene.add(dir1);
+  const dir2 = new THREE.DirectionalLight(0xffffff, 0.3);
+  dir2.position.set(-100, -50, -150);
+  scene.add(dir2);
+
+  window.addEventListener('resize', () => {
+    camera.aspect = wrap.clientWidth / wrap.clientHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(wrap.clientWidth, wrap.clientHeight);
+  });
+
+  animate();
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+// ---------- font loading ----------
+function wireFontInput(inputId, label, onLoaded) {
+  document.getElementById(inputId).addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    onLoaded(null); // reset trong lúc đang nạp
+
+    if (/\.woff2$/i.test(file.name)) {
+      setStatus(`LỖI (${label}): file .woff2 không được hỗ trợ. Hãy dùng .ttf hoặc .otf.`, true);
+      return;
+    }
+
+    setStatus(`Đang nạp font ${label}: ${file.name} ...`);
+    const reader = new FileReader();
+
+    reader.onerror = function () {
+      setStatus(`LỖI (${label}): không đọc được file.`, true);
+    };
+
+    reader.onload = function (ev) {
+      try {
+        if (typeof opentype === 'undefined') {
+          throw new Error('Thư viện opentype.js chưa được nạp (kiểm tra mạng/CDN).');
+        }
+        const parsed = opentype.parse(ev.target.result);
+        if (!parsed || !parsed.glyphs || parsed.glyphs.length === 0) {
+          throw new Error('File có vẻ không phải font hợp lệ hoặc không có glyph nào.');
+        }
+        onLoaded(parsed);
+        setStatus(`✓ Đã nạp font ${label}: ${file.name} (${parsed.glyphs.length} glyphs).`);
+        if (label === 'EMOJI') buildEmojiPicker();
+        doRender();
+      } catch (err) {
+        onLoaded(null);
+        setStatus(`LỖI đọc font ${label}: ` + err.message, true);
+        console.error('Font parse error:', err);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+wireFontInput('textFontFile', 'CHỮ', (f) => { textFont = f; });
+wireFontInput('emojiFontFile', 'EMOJI', (f) => { emojiFont = f; });
+
+// ---------- core pipeline: opentype path -> three.js Shape -> ExtrudeGeometry ----------
+
+// Kiểm tra điểm nằm trong đa giác (ray casting)
+function pointInPolygon(pt, poly) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const xi = poly[i].x, yi = poly[i].y, xj = poly[j].x, yj = poly[j].y;
+    if (((yi > pt.y) !== (yj > pt.y)) && (pt.x < (xj - xi) * (pt.y - yi) / (yj - yi) + xi)) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+// Kiểm tra contour `inner` có nằm HOÀN TOÀN bên trong contour `outer` không.
+// Phải xét toàn bộ điểm chứ không chỉ 1 điểm: các nét như sừng của chữ ư/ơ
+// CHỒNG LẤN lên thân chữ (không lồng vào trong), nếu chỉ test 1 điểm sẽ bị
+// hiểu nhầm thành lỗ và bị khoét mất.
+function polygonContains(outer, inner) {
+  if (outer.length < 3 || inner.length === 0) return false;
+  let insideCount = 0;
+  for (let i = 0; i < inner.length; i++) {
+    if (pointInPolygon(inner[i], outer)) insideCount++;
+  }
+  return insideCount >= inner.length * 0.98; // cho phép sai số nhỏ ở điểm sát biên
+}
+
+// Số đoạn thẳng dùng để làm phẳng mỗi đoạn cong bezier của glyph.
+// Cao hơn = mượt hơn nhưng nhiều tam giác hơn.
+const GLYPH_CURVE_SEGMENTS = 20;
+const GLYPH_SCALE = 1000; // độ chính xác số nguyên cho Clipper
+
+// Chuyển PolyTree của Clipper thành mảng THREE.Shape (kèm holes đúng cấu trúc lồng nhau)
+function polyTreeToShapes(tree, scale) {
+  const toVec2 = (contour) => contour.map(pt => new THREE.Vector2(pt.X / scale, pt.Y / scale));
+  const shapes = [];
+  function processSolid(node) {
+    const pts = toVec2(node.Contour());
+    if (pts.length < 3) return;
+    const shape = new THREE.Shape(pts);
+    node.Childs().forEach(holeNode => {
+      const hPts = toVec2(holeNode.Contour());
+      if (hPts.length >= 3) shape.holes.push(new THREE.Path(hPts));
+      // con của lỗ lại là vùng đặc lồng bên trong (vd font kiểu viền kép)
+      holeNode.Childs().forEach(processSolid);
+    });
+    shapes.push(shape);
+  }
+  tree.Childs().forEach(processSolid);
+  return shapes;
+}
+
+function opentypePathToShapes(path) {
+  // Bước 1: tách path thành từng contour riêng
+  const contours = [];
+  let cur = null;
+  path.commands.forEach(cmd => {
+    switch (cmd.type) {
+      case 'M':
+        cur = new THREE.Shape();
+        cur.moveTo(cmd.x, -cmd.y); // flip Y: opentype trả toạ độ Y hướng xuống
+        contours.push(cur);
+        break;
+      case 'L': if (cur) cur.lineTo(cmd.x, -cmd.y); break;
+      case 'C': if (cur) cur.bezierCurveTo(cmd.x1, -cmd.y1, cmd.x2, -cmd.y2, cmd.x, -cmd.y); break;
+      case 'Q': if (cur) cur.quadraticCurveTo(cmd.x1, -cmd.y1, cmd.x, -cmd.y); break;
+      case 'Z': if (cur) cur.closePath(); break;
+    }
+  });
+
+  if (contours.length === 0) return [];
+  if (contours.length === 1) return contours; // 1 contour thì không thể có lỗ
+
+  // Nếu thiếu ClipperLib thì quay về cách cũ (kém chính xác hơn nhưng vẫn chạy được)
+  if (typeof ClipperLib === 'undefined') {
+    console.warn('ClipperLib chưa nạp — dùng cách nhận diện lỗ đơn giản, có thể sai với font phức tạp.');
+    return shapesByEvenOddFallback(contours);
+  }
+
+  // Bước 2: làm phẳng contour rồi chuẩn hoá bằng Clipper với quy tắc NONZERO —
+  // đúng quy tắc mà font TrueType/OpenType dùng để tô chữ. Cách này xử lý được cả
+  // contour tự cắt (vd thanh ngang chữ A của một số font serif) lẫn contour chồng lấn
+  // (vd sừng chữ ư/ơ), là hai kiểu mà cách suy luận lồng nhau thuần tuý bị sai.
+  const clipperPaths = contours
+    .map(c => c.getPoints(GLYPH_CURVE_SEGMENTS))
+    .filter(pts => pts.length >= 3)
+    .map(pts => pts.map(p => ({
+      X: Math.round(p.x * GLYPH_SCALE),
+      Y: Math.round(p.y * GLYPH_SCALE)
+    })));
+
+  if (clipperPaths.length === 0) return [];
+
+  const clipper = new ClipperLib.Clipper();
+  clipper.AddPaths(clipperPaths, ClipperLib.PolyType.ptSubject, true);
+  const tree = new ClipperLib.PolyTree();
+  clipper.Execute(ClipperLib.ClipType.ctUnion, tree,
+                  ClipperLib.PolyFillType.pftNonZero, ClipperLib.PolyFillType.pftNonZero);
+
+  // Bước 3: duyệt cây kết quả — Clipper đã phân sẵn quan hệ cha/con (vùng đặc / lỗ)
+  const shapes = polyTreeToShapes(tree, GLYPH_SCALE);
+
+  return shapes.length > 0 ? shapes : contours;
+}
+
+// Dự phòng khi không có ClipperLib: suy luận lỗ bằng quan hệ lồng nhau (even-odd)
+function shapesByEvenOddFallback(contours) {
+  const flats = contours.map(c => c.getPoints(12));
+  const depths = flats.map((pts, i) => {
+    let d = 0;
+    flats.forEach((other, j) => { if (i !== j && polygonContains(other, pts)) d++; });
+    return d;
+  });
+  const solidIdx = [];
+  contours.forEach((c, i) => { if (depths[i] % 2 === 0) solidIdx.push(i); });
+  contours.forEach((c, i) => {
+    if (depths[i] % 2 === 0 || flats[i].length === 0) return;
+    let bestIdx = -1, bestDepth = -1;
+    solidIdx.forEach(j => {
+      if (polygonContains(flats[j], flats[i]) && depths[j] > bestDepth) { bestDepth = depths[j]; bestIdx = j; }
+    });
+    if (bestIdx >= 0) {
+      const hole = new THREE.Path();
+      hole.curves = contours[i].curves;
+      contours[bestIdx].holes.push(hole);
+    }
+  });
+  return solidIdx.map(i => contours[i]);
+}
+
+// Cache shapes của glyph. Shapes được tính ở đơn vị font (unitsPerEm) nên KHÔNG phụ thuộc
+// cỡ chữ — nhờ vậy kéo thanh trượt không phải chạy lại phép union Clipper cho từng ký tự.
+const glyphShapeCache = new Map();
+let __fontIdCounter = 0;
+function getGlyphShapes(font, ch, glyph) {
+  if (font.__cacheId === undefined) font.__cacheId = ++__fontIdCounter;
+  const key = font.__cacheId + ':' + ch;
+  let cached = glyphShapeCache.get(key);
+  if (cached === undefined) {
+    cached = opentypePathToShapes(glyph.getPath(0, 0, font.unitsPerEm));
+    glyphShapeCache.set(key, cached);
+  }
+  return cached;
+}
+
+function buildTextGroup(text, textFontSize, emojiFontSize, extrudeDepth, bevel, transitionGap, bgOptions, emojiNudge) {
+  const group = new THREE.Group();
+  let cursorX = 0; // in real-world units (mm), since each mesh below is pre-scaled
+  let prevType = null; // 'text' | 'emoji' | null
+
+  const textMaterial = new THREE.MeshStandardMaterial({ color: COLORS.text, metalness: 0.1, roughness: 0.6 });
+  const emojiMaterial = new THREE.MeshStandardMaterial({ color: COLORS.emoji, metalness: 0.1, roughness: 0.6 });
+  const bgMaterial = new THREE.MeshStandardMaterial({ color: COLORS.bg, metalness: 0.05, roughness: 0.8 });
+
+  // Gom contour (đường viền) của mọi ký tự, ở toạ độ mm thế giới thực, để dùng cho bước tạo nền
+  const bgSubjectPaths = []; // mỗi phần tử: mảng {X,Y} toạ độ đã nhân CLIPPER_SCALE
+
+  // ===== LƯỢT 1: tính bố cục ngang + đo chiều cao thực tế của từng ký tự =====
+  const items = [];
+  let prevInkRight = null; // mép mực phải của ký tự trước (mm)
+  for (const ch of Array.from(text)) { // Array.from handles surrogate pairs (emoji) correctly
+    const useEmoji = isEmojiChar(ch);
+    const font = useEmoji ? emojiFont : textFont;
+    const fontSize = useEmoji ? emojiFontSize : textFontSize;
+    const curType = ch === ' ' ? prevType : (useEmoji ? 'emoji' : 'text'); // dấu cách không tính là đổi loại
+    const isTransition = prevType !== null && curType !== null && curType !== prevType;
+
+    if (!font) {
+      console.warn(`Bỏ qua ký tự "${ch}" vì chưa nạp font ${useEmoji ? 'EMOJI' : 'CHỮ'}.`);
+      cursorX += fontSize * 0.6; // advance ước lượng để layout không bị chồng
+      if (prevInkRight !== null) prevInkRight += fontSize * 0.6;
+      if (ch !== ' ') prevType = curType;
+      continue;
+    }
+
+    const scale = fontSize / font.unitsPerEm;
+
+    if (ch === ' ') {
+      const glyph = font.charToGlyph(' ');
+      const adv = (glyph.advanceWidth || font.unitsPerEm * 0.3) * scale;
+      cursorX += adv;
+      if (prevInkRight !== null) prevInkRight += adv; // dấu cách vẫn cộng vào mốc mực
+      continue;
+    }
+
+    const glyph = font.charToGlyph(ch);
+    if (!glyph || (glyph.unicode === undefined && glyph.name === '.notdef')) {
+      console.warn(`Không tìm thấy glyph cho ký tự "${ch}" trong font ${useEmoji ? 'EMOJI' : 'CHỮ'}.`);
+      cursorX += fontSize * 0.6;
+      if (prevInkRight !== null) prevInkRight += fontSize * 0.6;
+      prevType = curType;
+      continue;
+    }
+
+    const shapes = getGlyphShapes(font, ch, glyph);
+    if (shapes.length === 0) {
+      cursorX += (glyph.advanceWidth || 0) * scale;
+      continue;
+    }
+
+    // đo hộp bao thực tế của ký tự này (đơn vị mm, chưa cộng vị trí)
+    const pts = shapes.map(s => s.getPoints(8));
+    let yMin = Infinity, yMax = -Infinity, xMin = Infinity, xMax = -Infinity;
+    pts.forEach(arr => arr.forEach(p => {
+      const y = p.y * scale, x = p.x * scale;
+      if (y < yMin) yMin = y;
+      if (y > yMax) yMax = y;
+      if (x < xMin) xMin = x;
+      if (x > xMax) xMax = x;
+    }));
+
+    // Khi chuyển chữ <-> emoji, đặt khoảng cách theo MÉP MỰC THẬT chứ không theo advance width.
+    // Advance width chứa lề trắng hai bên và lề này phình theo cỡ chữ, nên nếu dùng nó thì
+    // emoji càng to càng dạt ra xa chữ rồi tách rời khối nền.
+    let x = cursorX;
+    if (isTransition && prevInkRight !== null) {
+      x = prevInkRight + transitionGap - xMin;
+    }
+
+    items.push({ ch, useEmoji, font, scale, shapes, x, yMin, yMax });
+
+    cursorX = x + (glyph.advanceWidth || font.unitsPerEm * 0.6) * scale;
+    prevInkRight = x + xMax;
+    prevType = curType;
+  }
+
+  // ===== Căn dọc emoji tự động =====
+  // Chữ giữ nguyên baseline. Emoji được căn sao cho tâm dọc của nó trùng tâm dọc
+  // của dòng chữ — nhờ vậy đổi cỡ emoji không làm nó trôi lên/xuống rồi tách rời khối nền.
+  const textItems = items.filter(it => !it.useEmoji);
+  let lineCenterY = null;
+  if (textItems.length > 0) {
+    const tMin = Math.min(...textItems.map(it => it.yMin));
+    const tMax = Math.max(...textItems.map(it => it.yMax));
+    lineCenterY = (tMin + tMax) / 2;
+  }
+
+  items.forEach(it => {
+    if (!it.useEmoji || lineCenterY === null) { it.yOffset = 0; return; }
+    const emojiCenter = (it.yMin + it.yMax) / 2;
+    it.yOffset = lineCenterY - emojiCenter + (emojiNudge || 0);
+  });
+
+  // ===== LƯỢT 2: dựng mesh tại vị trí đã tính =====
+  items.forEach(it => {
+    const { scale, shapes, x, yOffset, useEmoji } = it;
+
+    // Thu thập TẤT CẢ contour của ký tự (giữ nguyên winding gốc của font) để đưa vào Clipper.
+    // Việc "làm đặc" nền (lấp ruột chữ) được xử lý ở bước lọc lỗ sau union/offset,
+    // như vậy đúng cho cả font chữ lẫn font emoji dù winding của chúng khác nhau.
+    if (bgOptions && bgOptions.enabled) {
+      shapes.map(shp => shp.getPoints(12)).filter(p => p.length >= 3).forEach(p => {
+        bgSubjectPaths.push(p.map(pt => ({
+          X: Math.round((pt.x * scale + x) * CLIPPER_SCALE),
+          Y: Math.round((pt.y * scale + yOffset) * CLIPPER_SCALE)
+        })));
+      });
+    }
+
+    // extrude depth tính theo font units riêng của font này, để sau khi scale ra đúng mm mong muốn
+    const extrudeSettings = {
+      depth: extrudeDepth / scale,
+      bevelEnabled: bevel === 1,
+      bevelThickness: bevel === 1 ? (extrudeDepth * 0.15) / scale : 0,
+      bevelSize: bevel === 1 ? (extrudeDepth * 0.1) / scale : 0,
+      bevelSegments: 2,
+      curveSegments: 8
+    };
+
+    const geometry = new THREE.ExtrudeGeometry(shapes, extrudeSettings);
+    const mesh = new THREE.Mesh(geometry, useEmoji ? emojiMaterial : textMaterial);
+    mesh.userData.role = useEmoji ? 'emoji' : 'text';
+    mesh.scale.set(scale, scale, scale); // scale riêng theo unitsPerEm của font này
+    mesh.position.x = x;
+    mesh.position.y = yOffset;
+    group.add(mesh);
+  });
+
+  // ---------- tạo nền theo viền chữ + emoji (offset outline) ----------
+  if (bgOptions && bgOptions.enabled) {
+    // Bevel làm chữ phình ra thêm đúng bằng bevelSize (= extrudeDepth * 0.1 mm),
+    // nên cộng bù vào offset nền để lề nhìn thấy đúng bằng giá trị người dùng chọn.
+    const bevelGrowth = bevel === 1 ? extrudeDepth * 0.1 : 0;
+    const effectiveOffset = bgOptions.offset + bevelGrowth;
+    try {
+      const bgMesh = buildOffsetBackgroundMesh(bgSubjectPaths, effectiveOffset, bgOptions.depth, bgMaterial, bgOptions.ring);
+      if (bgMesh) { bgMesh.userData.role = 'bg'; group.add(bgMesh); }
+    } catch (err) {
+      console.error('Lỗi tạo nền offset, dùng nền hình chữ nhật thay thế:', err);
+      const bgMesh = buildRectBackgroundMesh(group, effectiveOffset, bgOptions.depth, bgMaterial);
+      if (bgMesh) { bgMesh.userData.role = 'bg'; group.add(bgMesh); }
+    }
+  }
+
+  // center the whole group on X (mesh positions đã ở đơn vị mm, group không cần scale nữa)
+  const box = new THREE.Box3().setFromObject(group);
+  const center = new THREE.Vector3();
+  box.getCenter(center);
+  group.position.x -= center.x;
+  group.position.y -= center.y;
+
+  return group;
+}
+
+// Độ chính xác khi chuyển toạ độ mm (số thực) sang số nguyên cho ClipperLib
+const CLIPPER_SCALE = 1000;
+
+// Giữ lại chỉ các contour ngoài (diện tích dương) và bỏ mọi lỗ -> vùng đặc hoàn toàn.
+// Đây là mấu chốt để nền không bị "ăn vào trong" ruột chữ C hay ruột emoji 👍:
+// sau khi offset, các chỗ lõm bị khép miệng lại sẽ biến thành lỗ thật sự, cần loại bỏ.
+function solidifyPaths(paths) {
+  return paths.filter(p => ClipperLib.Clipper.Orientation(p));
+}
+
+// Tạo path hình tròn cho Clipper
+function makeCirclePath(cx, cy, r, segments) {
+  const pts = [];
+  for (let i = 0; i < segments; i++) {
+    const a = (i / segments) * Math.PI * 2;
+    pts.push({
+      X: Math.round((cx + Math.cos(a) * r) * CLIPPER_SCALE),
+      Y: Math.round((cy + Math.sin(a) * r) * CLIPPER_SCALE)
+    });
+  }
+  return pts;
+}
+
+// Tìm mép vật liệu của nền dọc theo một đường quét, tại đúng vị trí đặt vòng khuyên.
+// Phải quét đúng tại đó thay vì lấy mép của cả vùng, vì mép nền lồi lõm theo hình chữ —
+// dùng nhầm sẽ khiến vòng khuyên treo lơ lửng không dính vật liệu.
+// axis='x': quét ngang tại y=coord, trả về x mép. axis='y': quét dọc tại x=coord, trả về y mép.
+function edgeAlong(paths, coord, axis, wantMin) {
+  let best = wantMin ? Infinity : -Infinity;
+  const C = coord * CLIPPER_SCALE;
+  paths.forEach(p => {
+    for (let i = 0; i < p.length; i++) {
+      const a = p[i], b = p[(i + 1) % p.length];
+      const aC = axis === 'x' ? a.Y : a.X;
+      const bC = axis === 'x' ? b.Y : b.X;
+      if ((aC <= C && bC > C) || (bC <= C && aC > C)) {
+        const t = (C - aC) / (bC - aC);
+        const aV = axis === 'x' ? a.X : a.Y;
+        const bV = axis === 'x' ? b.X : b.Y;
+        const v = (aV + t * (bV - aV)) / CLIPPER_SCALE;
+        if (wantMin) { if (v < best) best = v; }
+        else { if (v > best) best = v; }
+      }
+    }
+  });
+  return isFinite(best) ? best : null;
+}
+
+function countOuters(paths) {
+  return paths.filter(p => ClipperLib.Clipper.Orientation(p)).length;
+}
+
+// Gắn vòng khuyên móc chìa khoá vào nền: hàn vòng ngoài vào nền rồi khoét lỗ trong.
+// Trả về PolyTree để giữ đúng cấu trúc lỗ.
+function attachKeyRing(bgPaths, ring) {
+  const innerR = ring.holeDiameter / 2;
+  const outerR = innerR + ring.wall;
+  const side = ring.side || 'left';
+  const posPct = (ring.position === undefined ? 50 : ring.position) / 100;
+  const inset = ring.inset || 0;
+
+  // bbox của nền
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  bgPaths.forEach(p => p.forEach(pt => {
+    const x = pt.X / CLIPPER_SCALE, y = pt.Y / CLIPPER_SCALE;
+    if (x < minX) minX = x; if (x > maxX) maxX = x;
+    if (y < minY) minY = y; if (y > maxY) maxY = y;
+  }));
+
+  const horizontal = (side === 'left' || side === 'right');
+  const wantMin = (side === 'left' || side === 'bottom');
+
+  // Toạ độ trượt dọc theo cạnh đã chọn. Thu vào một chút ở hai đầu để vòng khuyên
+  // không rơi ra ngoài phần vật liệu khi kéo về sát mép.
+  let slide;
+  if (horizontal) {
+    const pad = Math.min(outerR, (maxY - minY) / 2);
+    slide = (minY + pad) + posPct * ((maxY - pad) - (minY + pad));
+  } else {
+    const pad = Math.min(outerR, (maxX - minX) / 2);
+    slide = (minX + pad) + posPct * ((maxX - pad) - (minX + pad));
+  }
+
+  // mép nền tại đúng vị trí trượt đó
+  let edge = edgeAlong(bgPaths, slide, horizontal ? 'x' : 'y', wantMin);
+  if (edge === null) edge = wantMin ? (horizontal ? minX : minY) : (horizontal ? maxX : maxY);
+
+  const baseOuters = countOuters(bgPaths);
+
+  const centerFor = (overlap) => {
+    // đặt sao cho vòng ngoài ăn sâu vào nền đúng `overlap` mm
+    const along = wantMin ? edge + overlap - outerR : edge - overlap + outerR;
+    return horizontal ? { cx: along, cy: slide } : { cx: slide, cy: along };
+  };
+
+  // Thử hàn với độ chồng tăng dần cho đến khi vòng thực sự dính liền nền
+  let merged = null, chosen = null;
+  for (let step = 0; step < 40; step++) {
+    const overlap = ring.wall + inset + step * 0.5;
+    const c = centerFor(overlap);
+
+    const c1 = new ClipperLib.Clipper();
+    c1.AddPaths(bgPaths, ClipperLib.PolyType.ptSubject, true);
+    c1.AddPath(makeCirclePath(c.cx, c.cy, outerR, 64), ClipperLib.PolyType.ptClip, true);
+    const res = new ClipperLib.Paths();
+    c1.Execute(ClipperLib.ClipType.ctUnion, res,
+               ClipperLib.PolyFillType.pftNonZero, ClipperLib.PolyFillType.pftNonZero);
+
+    merged = res;
+    chosen = c;
+    // dính liền = không sinh thêm vùng rời rạc mới
+    if (countOuters(res) <= baseOuters) break;
+  }
+
+  // Khoét lỗ trong
+  const c2 = new ClipperLib.Clipper();
+  c2.AddPaths(merged, ClipperLib.PolyType.ptSubject, true);
+  c2.AddPath(makeCirclePath(chosen.cx, chosen.cy, innerR, 64), ClipperLib.PolyType.ptClip, true);
+  const tree = new ClipperLib.PolyTree();
+  c2.Execute(ClipperLib.ClipType.ctDifference, tree,
+             ClipperLib.PolyFillType.pftNonZero, ClipperLib.PolyFillType.pftNonZero);
+
+  return tree;
+}
+
+// Union tất cả contour ký tự lại, rồi offset (phình ra) theo khoảng cách chỉ định, trả về THREE.Mesh nền
+function buildOffsetBackgroundMesh(subjectPaths, offsetMm, depthMm, material, ring) {
+  if (!subjectPaths || subjectPaths.length === 0) return null;
+  if (typeof ClipperLib === 'undefined') {
+    throw new Error('ClipperLib chưa được nạp (kiểm tra mạng/CDN) — dùng nền hình chữ nhật thay thế.');
+  }
+
+  // Bước 1: union toàn bộ contour, dùng NonZero để lỗ trong chữ được nhận diện đúng theo winding gốc
+  const clipper = new ClipperLib.Clipper();
+  clipper.AddPaths(subjectPaths, ClipperLib.PolyType.ptSubject, true);
+  const unioned = new ClipperLib.Paths();
+  clipper.Execute(ClipperLib.ClipType.ctUnion, unioned, ClipperLib.PolyFillType.pftNonZero, ClipperLib.PolyFillType.pftNonZero);
+
+  if (!unioned || unioned.length === 0) {
+    throw new Error('Union contour cho ra kết quả rỗng.');
+  }
+
+  // Bước 2: lấp ruột chữ ngay sau union -> mỗi ký tự trở thành khối đặc
+  let finalPaths = solidifyPaths(unioned);
+  if (finalPaths.length === 0) {
+    throw new Error('Không tìm được contour ngoài hợp lệ sau khi union.');
+  }
+
+  // Bước 3: offset (phình) đường viền ra ngoài theo khoảng cách offsetMm
+  if (offsetMm > 0) {
+    const co = new ClipperLib.ClipperOffset();
+    co.AddPaths(finalPaths, ClipperLib.JoinType.jtRound, ClipperLib.EndType.etClosedPolygon);
+    const offsetted = new ClipperLib.Paths();
+    co.Execute(offsetted, offsetMm * CLIPPER_SCALE);
+    if (offsetted && offsetted.length > 0) {
+      // offset có thể sinh lỗ mới khi các ký tự phình dính vào nhau và bao quanh khe hở -> lấp tiếp
+      const solid = solidifyPaths(offsetted);
+      if (solid.length > 0) finalPaths = solid;
+    }
+  }
+
+  // Bước 4: gắn vòng khuyên (nếu bật) rồi build shape để extrude
+  let finalShapes;
+  if (ring && ring.enabled) {
+    const tree = attachKeyRing(finalPaths, ring);
+    finalShapes = polyTreeToShapes(tree, CLIPPER_SCALE);
+    if (finalShapes.length === 0) {
+      throw new Error('Gắn vòng khuyên thất bại.');
+    }
+  } else {
+    const toVec2Array = (path) => path.map(pt => new THREE.Vector2(pt.X / CLIPPER_SCALE, pt.Y / CLIPPER_SCALE));
+    finalShapes = finalPaths.map(p => new THREE.Shape(toVec2Array(p)));
+  }
+
+  const geometry = new THREE.ExtrudeGeometry(finalShapes, {
+    depth: depthMm,
+    bevelEnabled: false,
+    curveSegments: 1 // các path đã được sample thành đoạn thẳng sẵn, không cần chia thêm
+  });
+
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.position.z = -depthMm; // đặt nền ngay phía sau mặt chữ (z=0), chữ nổi lên phía trước
+  return mesh;
+}
+
+// Fallback: nếu offset outline lỗi (thiếu lib, hoặc dữ liệu path bất thường), dùng nền hình chữ nhật bo góc quanh bounding box
+function buildRectBackgroundMesh(group, offsetMm, depthMm, material) {
+  const box = new THREE.Box3().setFromObject(group);
+  if (!isFinite(box.min.x)) return null;
+  const w = (box.max.x - box.min.x) + offsetMm * 2;
+  const h = (box.max.y - box.min.y) + offsetMm * 2;
+  const cx = (box.max.x + box.min.x) / 2;
+  const cy = (box.max.y + box.min.y) / 2;
+  const r = Math.min(offsetMm, Math.min(w, h) / 2, 8);
+
+  const shape = new THREE.Shape();
+  const x0 = -w / 2, y0 = -h / 2;
+  shape.moveTo(x0 + r, y0);
+  shape.lineTo(x0 + w - r, y0);
+  shape.quadraticCurveTo(x0 + w, y0, x0 + w, y0 + r);
+  shape.lineTo(x0 + w, y0 + h - r);
+  shape.quadraticCurveTo(x0 + w, y0 + h, x0 + w - r, y0 + h);
+  shape.lineTo(x0 + r, y0 + h);
+  shape.quadraticCurveTo(x0, y0 + h, x0, y0 + h - r);
+  shape.lineTo(x0, y0 + r);
+  shape.quadraticCurveTo(x0, y0, x0 + r, y0);
+
+  const geometry = new THREE.ExtrudeGeometry(shape, { depth: depthMm, bevelEnabled: false, curveSegments: 6 });
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.position.set(cx, cy, -depthMm);
+  return mesh;
+}
+
+document.getElementById('gap').addEventListener('input', e => {
+  document.getElementById('gapVal').textContent = e.target.value;
+});
+document.getElementById('depth').addEventListener('input', e => {
+  document.getElementById('depthVal').textContent = e.target.value;
+});
+document.getElementById('textFontSize').addEventListener('input', e => {
+  document.getElementById('textSizeVal').textContent = e.target.value;
+});
+document.getElementById('emojiFontSize').addEventListener('input', e => {
+  document.getElementById('emojiSizeVal').textContent = e.target.value;
+});
+
+document.getElementById('bgOffset').addEventListener('input', e => {
+  document.getElementById('bgOffsetVal').textContent = e.target.value;
+});
+document.getElementById('bgDepth').addEventListener('input', e => {
+  document.getElementById('bgDepthVal').textContent = e.target.value;
+});
+
+document.getElementById('ringPos').addEventListener('input', e => {
+  document.getElementById('ringPosVal').textContent = e.target.value;
+});
+document.getElementById('ringInset').addEventListener('input', e => {
+  document.getElementById('ringDepthVal').textContent = e.target.value;
+});
+document.getElementById('emojiNudge').addEventListener('input', e => {
+  document.getElementById('emojiNudgeVal').textContent = e.target.value;
+});
+document.getElementById('ringHole').addEventListener('input', e => {
+  document.getElementById('ringHoleVal').textContent = e.target.value;
+});
+document.getElementById('ringWall').addEventListener('input', e => {
+  document.getElementById('ringWallVal').textContent = e.target.value;
+});
+
+function doRender() {
+  if (!scene) return; // chưa khởi tạo xong
+  const text = document.getElementById('textInput').value;
+  if (!text.trim()) {
+    setStatus('Nhập ít nhất 1 ký tự.', true);
+    return;
+  }
+
+  const chars = Array.from(text);
+  const hasEmoji = chars.some(isEmojiChar);
+  const hasText = chars.some(ch => ch !== ' ' && !isEmojiChar(ch));
+
+  if (hasText && !textFont) {
+    setStatus('Chưa có font CHỮ — mở phần "Đổi font" để nạp.', true);
+    return;
+  }
+  if (hasEmoji && !emojiFont) {
+    setStatus('Chưa có font EMOJI — mở phần "Đổi font" để nạp.', true);
+    return;
+  }
+  const depth = parseFloat(document.getElementById('depth').value);
+  const textFontSize = parseFloat(document.getElementById('textFontSize').value);
+  const emojiFontSize = parseFloat(document.getElementById('emojiFontSize').value);
+  const gap = parseFloat(document.getElementById('gap').value);
+  const bevel = parseInt(document.getElementById('bevel').value);
+  const bgOptions = {
+    enabled: document.getElementById('bgEnabled').checked,
+    offset: parseFloat(document.getElementById('bgOffset').value),
+    depth: parseFloat(document.getElementById('bgDepth').value),
+    ring: {
+      enabled: document.getElementById('ringEnabled').checked,
+      holeDiameter: parseFloat(document.getElementById('ringHole').value),
+      wall: parseFloat(document.getElementById('ringWall').value),
+      side: document.getElementById('ringSide').value,
+      position: parseFloat(document.getElementById('ringPos').value),
+      inset: parseFloat(document.getElementById('ringInset').value)
+    }
+  };
+
+  if (bgOptions.ring.enabled && !bgOptions.enabled) {
+    setStatus('Lỗ móc chìa khoá cần bật "Thêm nền" trước (vòng khuyên phải hàn vào nền).', true);
+    return;
+  }
+
+  const t0 = performance.now();
+  let newGroup;
+  try {
+    newGroup = buildTextGroup(text, textFontSize, emojiFontSize, depth, bevel, gap, bgOptions,
+                              parseFloat(document.getElementById('emojiNudge').value));
+  } catch (err) {
+    setStatus('Lỗi khi dựng mô hình: ' + err.message, true);
+    console.error(err);
+    return;
+  }
+
+  // chỉ thay mô hình cũ sau khi dựng thành công, tránh màn hình trắng khi lỗi
+  if (currentGroup) {
+    scene.remove(currentGroup);
+    currentGroup.traverse(o => { if (o.geometry) o.geometry.dispose(); });
+  }
+  currentGroup = newGroup;
+  scene.add(currentGroup);
+  setStatus(`✓ "${text}" — ${Math.round(performance.now() - t0)}ms`);
+}
+
+// Cập nhật trực tiếp khi chỉnh: gom nhiều thay đổi liên tiếp lại rồi dựng 1 lần
+let renderTimer = null;
+function scheduleRender(delay) {
+  clearTimeout(renderTimer);
+  renderTimer = setTimeout(doRender, delay === undefined ? 130 : delay);
+}
+
+// Nối mọi ô điều khiển vào cơ chế cập nhật trực tiếp
+[...document.querySelectorAll('#panel input[type=range]:not(.no-render)')].forEach(el => {
+  el.addEventListener('input', () => scheduleRender());
+});
+// Bỏ qua các ô có class .no-render (chọn chủ đề emoji, chọn màu) vì chúng không
+// làm thay đổi hình học — đổi màu chỉ cần cập nhật material, khỏi dựng lại cho nhanh.
+[...document.querySelectorAll('#panel input[type=checkbox]:not(.no-render), #panel select:not(.no-render)')].forEach(el => {
+  el.addEventListener('change', () => scheduleRender(0));
+});
+document.getElementById('textInput').addEventListener('input', () => scheduleRender(250));
+
+// ===== Bảng chọn emoji =====
+function insertIntoText(str) {
+  const input = document.getElementById('textInput');
+  const s = input.selectionStart, e = input.selectionEnd;
+  const v = input.value;
+  input.value = v.slice(0, s) + str + v.slice(e);
+  const pos = s + str.length;
+  input.setSelectionRange(pos, pos);
+  input.focus();
+  scheduleRender(0);
+}
+
+// Bảng emoji xếp theo 9 nhóm chuẩn của Unicode, đã lọc sẵn chỉ giữ emoji có glyph trong font.
+// Dạng: [{n: tên nhóm, e: [[mã hex, tên tiếng Anh], ...]}, ...]
+const EMOJI_GROUPS = [{"n":"Mặt & cảm xúc","e":[["1f600","grinning face"],["1f603","grinning face with big eyes"],["1f604","grinning face with smiling eyes"],["1f601","beaming face with smiling eyes"],["1f606","grinning squinting face"],["1f605","grinning face with sweat"],["1f923","rolling on the floor laughing"],["1f602","face with tears of joy"],["1f642","slightly smiling face"],["1f643","upside-down face"],["1fae0","melting face"],["1f609","winking face"],["1f60a","smiling face with smiling eyes"],["1f607","smiling face with halo"],["1f970","smiling face with hearts"],["1f60d","smiling face with heart-eyes"],["1f929","star-struck"],["1f618","face blowing a kiss"],["1f617","kissing face"],["1f61a","kissing face with closed eyes"],["1f619","kissing face with smiling eyes"],["1f972","smiling face with tear"],["1f60b","face savoring food"],["1f61b","face with tongue"],["1f61c","winking face with tongue"],["1f92a","zany face"],["1f61d","squinting face with tongue"],["1f911","money-mouth face"],["1f917","smiling face with open hands"],["1f92d","face with hand over mouth"],["1fae2","face with open eyes and hand over mouth"],["1fae3","face with peeking eye"],["1f92b","shushing face"],["1f914","thinking face"],["1fae1","saluting face"],["1f910","zipper-mouth face"],["1f928","face with raised eyebrow"],["1f610","neutral face"],["1f611","expressionless face"],["1f636","face without mouth"],["1fae5","dotted line face"],["1f60f","smirking face"],["1f612","unamused face"],["1f644","face with rolling eyes"],["1f62c","grimacing face"],["1f925","lying face"],["1fae8","shaking face"],["1f60c","relieved face"],["1f614","pensive face"],["1f62a","sleepy face"],["1f924","drooling face"],["1f634","sleeping face"],["1fae9","face with bags under eyes"],["1f637","face with medical mask"],["1f912","face with thermometer"],["1f915","face with head-bandage"],["1f922","nauseated face"],["1f92e","face vomiting"],["1f927","sneezing face"],["1f975","hot face"],["1f976","cold face"],["1f974","woozy face"],["1f635","face with crossed-out eyes"],["1f92f","exploding head"],["1f920","cowboy hat face"],["1f973","partying face"],["1f978","disguised face"],["1f60e","smiling face with sunglasses"],["1f913","nerd face"],["1f9d0","face with monocle"],["1f615","confused face"],["1fae4","face with diagonal mouth"],["1f61f","worried face"],["1f641","slightly frowning face"],["1f62e","face with open mouth"],["1f62f","hushed face"],["1f632","astonished face"],["1f633","flushed face"],["1faea","distorted face"],["1f97a","pleading face"],["1f979","face holding back tears"],["1f626","frowning face with open mouth"],["1f627","anguished face"],["1f628","fearful face"],["1f630","anxious face with sweat"],["1f625","sad but relieved face"],["1f622","crying face"],["1f62d","loudly crying face"],["1f631","face screaming in fear"],["1f616","confounded face"],["1f623","persevering face"],["1f61e","disappointed face"],["1f613","downcast face with sweat"],["1f629","weary face"],["1f62b","tired face"],["1f971","yawning face"],["1f624","face with steam from nose"],["1f621","enraged face"],["1f620","angry face"],["1f92c","face with symbols on mouth"],["1f608","smiling face with horns"],["1f47f","angry face with horns"],["1f480","skull"],["1f4a9","pile of poo"],["1f921","clown face"],["1f479","ogre"],["1f47a","goblin"],["1f47b","ghost"],["1f47d","alien"],["1f47e","alien monster"],["1f916","robot"],["1f63a","grinning cat"],["1f638","grinning cat with smiling eyes"],["1f639","cat with tears of joy"],["1f63b","smiling cat with heart-eyes"],["1f63c","cat with wry smile"],["1f63d","kissing cat"],["1f640","weary cat"],["1f63f","crying cat"],["1f63e","pouting cat"],["1f648","see-no-evil monkey"],["1f649","hear-no-evil monkey"],["1f64a","speak-no-evil monkey"],["1f48c","love letter"],["1f498","heart with arrow"],["1f49d","heart with ribbon"],["1f496","sparkling heart"],["1f497","growing heart"],["1f493","beating heart"],["1f49e","revolving hearts"],["1f495","two hearts"],["1f49f","heart decoration"],["1f494","broken heart"],["1fa77","pink heart"],["1f9e1","orange heart"],["1f49b","yellow heart"],["1f49a","green heart"],["1f499","blue heart"],["1fa75","light blue heart"],["1f49c","purple heart"],["1f90e","brown heart"],["1f5a4","black heart"],["1fa76","grey heart"],["1f90d","white heart"],["1f48b","kiss mark"],["1f4af","hundred points"],["1f4a2","anger symbol"],["1faef","fight cloud"],["1f4a5","collision"],["1f4ab","dizzy"],["1f4a6","sweat droplets"],["1f4a8","dashing away"],["1f4ac","speech balloon"],["1f4ad","thought balloon"],["1f4a4","ZZZ"]]},{"n":"Người & cơ thể","e":[["1f44b","waving hand"],["1f91a","raised back of hand"],["270b","raised hand"],["1f596","vulcan salute"],["1faf1","rightwards hand"],["1faf2","leftwards hand"],["1faf3","palm down hand"],["1faf4","palm up hand"],["1faf7","leftwards pushing hand"],["1faf8","rightwards pushing hand"],["1f44c","OK hand"],["1f90c","pinched fingers"],["1f90f","pinching hand"],["1f91e","crossed fingers"],["1faf0","hand with index finger and thumb crossed"],["1f91f","love-you gesture"],["1f918","sign of the horns"],["1f919","call me hand"],["1f448","backhand index pointing left"],["1f449","backhand index pointing right"],["1f446","backhand index pointing up"],["1f595","middle finger"],["1f447","backhand index pointing down"],["1faf5","index pointing at the viewer"],["1f44d","thumbs up"],["1f44e","thumbs down"],["270a","raised fist"],["1f44a","oncoming fist"],["1f91b","left-facing fist"],["1f91c","right-facing fist"],["1f44f","clapping hands"],["1f64c","raising hands"],["1faf6","heart hands"],["1f450","open hands"],["1f932","palms up together"],["1f91d","handshake"],["1f64f","folded hands"],["1f485","nail polish"],["1f933","selfie"],["1f4aa","flexed biceps"],["1f9be","mechanical arm"],["1f9bf","mechanical leg"],["1f9b5","leg"],["1f9b6","foot"],["1f442","ear"],["1f9bb","ear with hearing aid"],["1f443","nose"],["1f9e0","brain"],["1fac0","anatomical heart"],["1fac1","lungs"],["1f9b7","tooth"],["1f9b4","bone"],["1f440","eyes"],["1f445","tongue"],["1f444","mouth"],["1fae6","biting lip"],["1f476","baby"],["1f9d2","child"],["1f466","boy"],["1f467","girl"],["1f9d1","person"],["1f471","person blond hair"],["1f468","man"],["1f9d4","person beard"],["1f469","woman"],["1f9d3","older person"],["1f474","old man"],["1f475","old woman"],["1f64d","person frowning"],["1f64e","person pouting"],["1f645","person gesturing NO"],["1f646","person gesturing OK"],["1f481","person tipping hand"],["1f64b","person raising hand"],["1f9cf","deaf person"],["1f647","person bowing"],["1f926","person facepalming"],["1f937","person shrugging"],["1f46e","police officer"],["1f482","guard"],["1f977","ninja"],["1f477","construction worker"],["1fac5","person with crown"],["1f934","prince"],["1f478","princess"],["1f473","person wearing turban"],["1f472","person with skullcap"],["1f9d5","woman with headscarf"],["1f935","person in tuxedo"],["1f470","person with veil"],["1f930","pregnant woman"],["1fac3","pregnant man"],["1fac4","pregnant person"],["1f931","breast-feeding"],["1f47c","baby angel"],["1f385","Santa Claus"],["1f936","Mrs. Claus"],["1f9b8","superhero"],["1f9b9","supervillain"],["1f9d9","mage"],["1f9da","fairy"],["1f9db","vampire"],["1f9dc","merperson"],["1f9dd","elf"],["1f9de","genie"],["1f9df","zombie"],["1f9cc","troll"],["1fac8","hairy creature"],["1f486","person getting massage"],["1f487","person getting haircut"],["1f6b6","person walking"],["1f9cd","person standing"],["1f9ce","person kneeling"],["1f3c3","person running"],["1f483","woman dancing"],["1f57a","man dancing"],["1f46f","people with bunny ears"],["1f9d6","person in steamy room"],["1f9d7","person climbing"],["1f93a","person fencing"],["1f3c7","horse racing"],["1f3c2","snowboarder"],["1f3c4","person surfing"],["1f6a3","person rowing boat"],["1f3ca","person swimming"],["1f6b4","person biking"],["1f6b5","person mountain biking"],["1f938","person cartwheeling"],["1f93c","people wrestling"],["1f93d","person playing water polo"],["1f93e","person playing handball"],["1f939","person juggling"],["1f9d8","person in lotus position"],["1f6c0","person taking bath"],["1f6cc","person in bed"],["1f46d","women holding hands"],["1f46b","woman and man holding hands"],["1f46c","men holding hands"],["1f48f","kiss"],["1f491","couple with heart"],["1f464","bust in silhouette"],["1f465","busts in silhouette"],["1fac2","people hugging"],["1f46a","family"],["1f463","footprints"],["1fac6","fingerprint"]]},{"n":"Động vật & thiên nhiên","e":[["1f435","monkey face"],["1f412","monkey"],["1f98d","gorilla"],["1f9a7","orangutan"],["1f436","dog face"],["1f415","dog"],["1f9ae","guide dog"],["1f429","poodle"],["1f43a","wolf"],["1f98a","fox"],["1f99d","raccoon"],["1f431","cat face"],["1f408","cat"],["1f981","lion"],["1f42f","tiger face"],["1f405","tiger"],["1f406","leopard"],["1f434","horse face"],["1face","moose"],["1facf","donkey"],["1f40e","horse"],["1f984","unicorn"],["1f993","zebra"],["1f98c","deer"],["1f9ac","bison"],["1f42e","cow face"],["1f402","ox"],["1f403","water buffalo"],["1f404","cow"],["1f437","pig face"],["1f416","pig"],["1f417","boar"],["1f43d","pig nose"],["1f40f","ram"],["1f411","ewe"],["1f410","goat"],["1f42a","camel"],["1f42b","two-hump camel"],["1f999","llama"],["1f992","giraffe"],["1f418","elephant"],["1f9a3","mammoth"],["1f98f","rhinoceros"],["1f99b","hippopotamus"],["1f42d","mouse face"],["1f401","mouse"],["1f400","rat"],["1f439","hamster"],["1f430","rabbit face"],["1f407","rabbit"],["1f9ab","beaver"],["1f994","hedgehog"],["1f987","bat"],["1f43b","bear"],["1f428","koala"],["1f43c","panda"],["1f9a5","sloth"],["1f9a6","otter"],["1f9a8","skunk"],["1f998","kangaroo"],["1f9a1","badger"],["1f43e","paw prints"],["1f983","turkey"],["1f414","chicken"],["1f413","rooster"],["1f423","hatching chick"],["1f424","baby chick"],["1f425","front-facing baby chick"],["1f426","bird"],["1f427","penguin"],["1f985","eagle"],["1f986","duck"],["1f9a2","swan"],["1f989","owl"],["1f9a4","dodo"],["1fab6","feather"],["1f9a9","flamingo"],["1f99a","peacock"],["1f99c","parrot"],["1fabd","wing"],["1fabf","goose"],["1f438","frog"],["1f40a","crocodile"],["1f422","turtle"],["1f98e","lizard"],["1f40d","snake"],["1f432","dragon face"],["1f409","dragon"],["1f995","sauropod"],["1f996","T-Rex"],["1f433","spouting whale"],["1f40b","whale"],["1f42c","dolphin"],["1facd","orca"],["1f9ad","seal"],["1f41f","fish"],["1f420","tropical fish"],["1f421","blowfish"],["1f988","shark"],["1f419","octopus"],["1f41a","spiral shell"],["1fab8","coral"],["1fabc","jellyfish"],["1f980","crab"],["1f99e","lobster"],["1f990","shrimp"],["1f991","squid"],["1f9aa","oyster"],["1f40c","snail"],["1f98b","butterfly"],["1f41b","bug"],["1f41c","ant"],["1f41d","honeybee"],["1fab2","beetle"],["1f41e","lady beetle"],["1f997","cricket"],["1fab3","cockroach"],["1f982","scorpion"],["1f99f","mosquito"],["1fab0","fly"],["1fab1","worm"],["1f9a0","microbe"],["1f490","bouquet"],["1f338","cherry blossom"],["1f4ae","white flower"],["1fab7","lotus"],["1f339","rose"],["1f940","wilted flower"],["1f33a","hibiscus"],["1f33b","sunflower"],["1f33c","blossom"],["1f337","tulip"],["1fabb","hyacinth"],["1f331","seedling"],["1fab4","potted plant"],["1f332","evergreen tree"],["1f333","deciduous tree"],["1f334","palm tree"],["1f335","cactus"],["1f33e","sheaf of rice"],["1f33f","herb"],["1f340","four leaf clover"],["1f341","maple leaf"],["1f342","fallen leaf"],["1f343","leaf fluttering in wind"],["1fab9","empty nest"],["1faba","nest with eggs"],["1f344","mushroom"],["1fabe","leafless tree"]]},{"n":"Đồ ăn & thức uống","e":[["1f347","grapes"],["1f348","melon"],["1f349","watermelon"],["1f34a","tangerine"],["1f34b","lemon"],["1f34c","banana"],["1f34d","pineapple"],["1f96d","mango"],["1f34e","red apple"],["1f34f","green apple"],["1f350","pear"],["1f351","peach"],["1f352","cherries"],["1f353","strawberry"],["1fad0","blueberries"],["1f95d","kiwi fruit"],["1f345","tomato"],["1fad2","olive"],["1f965","coconut"],["1f951","avocado"],["1f346","eggplant"],["1f954","potato"],["1f955","carrot"],["1f33d","ear of corn"],["1fad1","bell pepper"],["1f952","cucumber"],["1f96c","leafy green"],["1f966","broccoli"],["1f9c4","garlic"],["1f9c5","onion"],["1f95c","peanuts"],["1fad8","beans"],["1f330","chestnut"],["1fada","ginger root"],["1fadb","pea pod"],["1fadc","root vegetable"],["1f35e","bread"],["1f950","croissant"],["1f956","baguette bread"],["1fad3","flatbread"],["1f968","pretzel"],["1f96f","bagel"],["1f95e","pancakes"],["1f9c7","waffle"],["1f9c0","cheese wedge"],["1f356","meat on bone"],["1f357","poultry leg"],["1f969","cut of meat"],["1f953","bacon"],["1f354","hamburger"],["1f35f","french fries"],["1f355","pizza"],["1f32d","hot dog"],["1f96a","sandwich"],["1f32e","taco"],["1f32f","burrito"],["1fad4","tamale"],["1f959","stuffed flatbread"],["1f9c6","falafel"],["1f95a","egg"],["1f373","cooking"],["1f958","shallow pan of food"],["1f372","pot of food"],["1fad5","fondue"],["1f963","bowl with spoon"],["1f957","green salad"],["1f37f","popcorn"],["1f9c8","butter"],["1f9c2","salt"],["1f96b","canned food"],["1f371","bento box"],["1f358","rice cracker"],["1f359","rice ball"],["1f35a","cooked rice"],["1f35b","curry rice"],["1f35c","steaming bowl"],["1f35d","spaghetti"],["1f360","roasted sweet potato"],["1f362","oden"],["1f363","sushi"],["1f364","fried shrimp"],["1f365","fish cake with swirl"],["1f96e","moon cake"],["1f361","dango"],["1f95f","dumpling"],["1f960","fortune cookie"],["1f961","takeout box"],["1f366","soft ice cream"],["1f367","shaved ice"],["1f368","ice cream"],["1f369","doughnut"],["1f36a","cookie"],["1f382","birthday cake"],["1f370","shortcake"],["1f9c1","cupcake"],["1f967","pie"],["1f36b","chocolate bar"],["1f36c","candy"],["1f36d","lollipop"],["1f36e","custard"],["1f36f","honey pot"],["1f37c","baby bottle"],["1f95b","glass of milk"],["2615","hot beverage"],["1fad6","teapot"],["1f375","teacup without handle"],["1f376","sake"],["1f37e","bottle with popping cork"],["1f377","wine glass"],["1f378","cocktail glass"],["1f379","tropical drink"],["1f37a","beer mug"],["1f37b","clinking beer mugs"],["1f942","clinking glasses"],["1f943","tumbler glass"],["1fad7","pouring liquid"],["1f964","cup with straw"],["1f9cb","bubble tea"],["1f9c3","beverage box"],["1f9c9","mate"],["1f9ca","ice"],["1f962","chopsticks"],["1f374","fork and knife"],["1f944","spoon"],["1f52a","kitchen knife"],["1fad9","jar"],["1f3fa","amphora"]]},{"n":"Du lịch & địa điểm","e":[["1f30d","globe showing Europe-Africa"],["1f30e","globe showing Americas"],["1f30f","globe showing Asia-Australia"],["1f310","globe with meridians"],["1f5fe","map of Japan"],["1f9ed","compass"],["1f6d8","landslide"],["1f30b","volcano"],["1f5fb","mount fuji"],["1f9f1","brick"],["1faa8","rock"],["1fab5","wood"],["1f6d6","hut"],["1f3e0","house"],["1f3e1","house with garden"],["1f3e2","office building"],["1f3e3","Japanese post office"],["1f3e4","post office"],["1f3e5","hospital"],["1f3e6","bank"],["1f3e8","hotel"],["1f3e9","love hotel"],["1f3ea","convenience store"],["1f3eb","school"],["1f3ec","department store"],["1f3ed","factory"],["1f3ef","Japanese castle"],["1f3f0","castle"],["1f492","wedding"],["1f5fc","Tokyo tower"],["1f5fd","Statue of Liberty"],["26ea","church"],["1f54c","mosque"],["1f6d5","hindu temple"],["1f54d","synagogue"],["1f54b","kaaba"],["26f2","fountain"],["26fa","tent"],["1f301","foggy"],["1f303","night with stars"],["1f304","sunrise over mountains"],["1f305","sunrise"],["1f306","cityscape at dusk"],["1f307","sunset"],["1f309","bridge at night"],["1f3a0","carousel horse"],["1f6dd","playground slide"],["1f3a1","ferris wheel"],["1f3a2","roller coaster"],["1f488","barber pole"],["1f3aa","circus tent"],["1f682","locomotive"],["1f683","railway car"],["1f684","high-speed train"],["1f685","bullet train"],["1f686","train"],["1f687","metro"],["1f688","light rail"],["1f689","station"],["1f68a","tram"],["1f69d","monorail"],["1f69e","mountain railway"],["1f68b","tram car"],["1f68c","bus"],["1f68d","oncoming bus"],["1f68e","trolleybus"],["1f690","minibus"],["1f691","ambulance"],["1f692","fire engine"],["1f693","police car"],["1f694","oncoming police car"],["1f695","taxi"],["1f696","oncoming taxi"],["1f697","automobile"],["1f698","oncoming automobile"],["1f699","sport utility vehicle"],["1f6fb","pickup truck"],["1f69a","delivery truck"],["1f69b","articulated lorry"],["1f69c","tractor"],["1f6f5","motor scooter"],["1f9bd","manual wheelchair"],["1f9bc","motorized wheelchair"],["1f6fa","auto rickshaw"],["1f6b2","bicycle"],["1f6f4","kick scooter"],["1f6f9","skateboard"],["1f6fc","roller skate"],["1f68f","bus stop"],["26fd","fuel pump"],["1f6de","wheel"],["1f6a8","police car light"],["1f6a5","horizontal traffic light"],["1f6a6","vertical traffic light"],["1f6d1","stop sign"],["1f6a7","construction"],["2693","anchor"],["1f6df","ring buoy"],["26f5","sailboat"],["1f6f6","canoe"],["1f6a4","speedboat"],["1f6a2","ship"],["1f6eb","airplane departure"],["1f6ec","airplane arrival"],["1fa82","parachute"],["1f4ba","seat"],["1f681","helicopter"],["1f69f","suspension railway"],["1f6a0","mountain cableway"],["1f6a1","aerial tramway"],["1f680","rocket"],["1f6f8","flying saucer"],["1f9f3","luggage"],["231b","hourglass done"],["23f3","hourglass not done"],["231a","watch"],["23f0","alarm clock"],["1f55b","twelve o’clock"],["1f567","twelve-thirty"],["1f550","one o’clock"],["1f55c","one-thirty"],["1f551","two o’clock"],["1f55d","two-thirty"],["1f552","three o’clock"],["1f55e","three-thirty"],["1f553","four o’clock"],["1f55f","four-thirty"],["1f554","five o’clock"],["1f560","five-thirty"],["1f555","six o’clock"],["1f561","six-thirty"],["1f556","seven o’clock"],["1f562","seven-thirty"],["1f557","eight o’clock"],["1f563","eight-thirty"],["1f558","nine o’clock"],["1f564","nine-thirty"],["1f559","ten o’clock"],["1f565","ten-thirty"],["1f55a","eleven o’clock"],["1f566","eleven-thirty"],["1f311","new moon"],["1f312","waxing crescent moon"],["1f313","first quarter moon"],["1f314","waxing gibbous moon"],["1f315","full moon"],["1f316","waning gibbous moon"],["1f317","last quarter moon"],["1f318","waning crescent moon"],["1f319","crescent moon"],["1f31a","new moon face"],["1f31b","first quarter moon face"],["1f31c","last quarter moon face"],["1f31d","full moon face"],["1f31e","sun with face"],["1fa90","ringed planet"],["2b50","star"],["1f31f","glowing star"],["1f320","shooting star"],["1f30c","milky way"],["26c5","sun behind cloud"],["1f300","cyclone"],["1f308","rainbow"],["1f302","closed umbrella"],["2614","umbrella with rain drops"],["26a1","high voltage"],["26c4","snowman without snow"],["1f525","fire"],["1f4a7","droplet"],["1f30a","water wave"]]},{"n":"Hoạt động","e":[["1f383","jack-o-lantern"],["1f384","Christmas tree"],["1f386","fireworks"],["1f387","sparkler"],["1f9e8","firecracker"],["2728","sparkles"],["1f388","balloon"],["1f389","party popper"],["1f38a","confetti ball"],["1f38b","tanabata tree"],["1f38d","pine decoration"],["1f38e","Japanese dolls"],["1f38f","carp streamer"],["1f390","wind chime"],["1f391","moon viewing ceremony"],["1f9e7","red envelope"],["1f380","ribbon"],["1f381","wrapped gift"],["1f3ab","ticket"],["1f3c6","trophy"],["1f3c5","sports medal"],["1f947","1st place medal"],["1f948","2nd place medal"],["1f949","3rd place medal"],["26bd","soccer ball"],["26be","baseball"],["1f94e","softball"],["1f3c0","basketball"],["1f3d0","volleyball"],["1f3c8","american football"],["1f3c9","rugby football"],["1f3be","tennis"],["1f94f","flying disc"],["1f3b3","bowling"],["1f3cf","cricket game"],["1f3d1","field hockey"],["1f3d2","ice hockey"],["1f94d","lacrosse"],["1f3d3","ping pong"],["1f3f8","badminton"],["1f94a","boxing glove"],["1f94b","martial arts uniform"],["1f945","goal net"],["26f3","flag in hole"],["1f3a3","fishing pole"],["1f93f","diving mask"],["1f3bd","running shirt"],["1f3bf","skis"],["1f6f7","sled"],["1f94c","curling stone"],["1f3af","bullseye"],["1fa80","yo-yo"],["1fa81","kite"],["1f52b","water pistol"],["1f3b1","pool 8 ball"],["1f52e","crystal ball"],["1fa84","magic wand"],["1f3ae","video game"],["1f3b0","slot machine"],["1f3b2","game die"],["1f9e9","puzzle piece"],["1f9f8","teddy bear"],["1fa85","piñata"],["1faa9","mirror ball"],["1fa86","nesting dolls"],["1f0cf","joker"],["1f004","mahjong red dragon"],["1f3b4","flower playing cards"],["1f3ad","performing arts"],["1f3a8","artist palette"],["1f9f5","thread"],["1faa1","sewing needle"],["1f9f6","yarn"],["1faa2","knot"]]},{"n":"Đồ vật","e":[["1f453","glasses"],["1f97d","goggles"],["1f97c","lab coat"],["1f9ba","safety vest"],["1f454","necktie"],["1f455","t-shirt"],["1f456","jeans"],["1f9e3","scarf"],["1f9e4","gloves"],["1f9e5","coat"],["1f9e6","socks"],["1f457","dress"],["1f458","kimono"],["1f97b","sari"],["1fa71","one-piece swimsuit"],["1fa72","briefs"],["1fa73","shorts"],["1f459","bikini"],["1f45a","woman’s clothes"],["1faad","folding hand fan"],["1f45b","purse"],["1f45c","handbag"],["1f45d","clutch bag"],["1f392","backpack"],["1fa74","thong sandal"],["1f45e","man’s shoe"],["1f45f","running shoe"],["1f97e","hiking boot"],["1f97f","flat shoe"],["1f460","high-heeled shoe"],["1f461","woman’s sandal"],["1fa70","ballet shoes"],["1f462","woman’s boot"],["1faae","hair pick"],["1f451","crown"],["1f452","woman’s hat"],["1f3a9","top hat"],["1f393","graduation cap"],["1f9e2","billed cap"],["1fa96","military helmet"],["1f4ff","prayer beads"],["1f484","lipstick"],["1f48d","ring"],["1f48e","gem stone"],["1f507","muted speaker"],["1f508","speaker low volume"],["1f509","speaker medium volume"],["1f50a","speaker high volume"],["1f4e2","loudspeaker"],["1f4e3","megaphone"],["1f4ef","postal horn"],["1f514","bell"],["1f515","bell with slash"],["1f3bc","musical score"],["1f3b5","musical note"],["1f3b6","musical notes"],["1f3a4","microphone"],["1f3a7","headphone"],["1f4fb","radio"],["1f3b7","saxophone"],["1f3ba","trumpet"],["1fa8a","trombone"],["1fa97","accordion"],["1f3b8","guitar"],["1f3b9","musical keyboard"],["1f3bb","violin"],["1fa95","banjo"],["1f941","drum"],["1fa98","long drum"],["1fa87","maracas"],["1fa88","flute"],["1fa89","harp"],["1f4f1","mobile phone"],["1f4f2","mobile phone with arrow"],["1f4de","telephone receiver"],["1f4df","pager"],["1f4e0","fax machine"],["1f50b","battery"],["1faab","low battery"],["1f50c","electric plug"],["1f4bb","laptop"],["1f4bd","computer disk"],["1f4be","floppy disk"],["1f4bf","optical disk"],["1f4c0","dvd"],["1f9ee","abacus"],["1f3a5","movie camera"],["1f3ac","clapper board"],["1f4fa","television"],["1f4f7","camera"],["1f4f8","camera with flash"],["1f4f9","video camera"],["1f4fc","videocassette"],["1f50d","magnifying glass tilted left"],["1f50e","magnifying glass tilted right"],["1f4a1","light bulb"],["1f526","flashlight"],["1f3ee","red paper lantern"],["1fa94","diya lamp"],["1f4d4","notebook with decorative cover"],["1f4d5","closed book"],["1f4d6","open book"],["1f4d7","green book"],["1f4d8","blue book"],["1f4d9","orange book"],["1f4da","books"],["1f4d3","notebook"],["1f4d2","ledger"],["1f4c3","page with curl"],["1f4dc","scroll"],["1f4c4","page facing up"],["1f4f0","newspaper"],["1f4d1","bookmark tabs"],["1f516","bookmark"],["1fa99","coin"],["1f4b0","money bag"],["1fa8e","treasure chest"],["1f4b4","yen banknote"],["1f4b5","dollar banknote"],["1f4b6","euro banknote"],["1f4b7","pound banknote"],["1f4b8","money with wings"],["1f4b3","credit card"],["1f9fe","receipt"],["1f4b9","chart increasing with yen"],["1f4e7","e-mail"],["1f4e8","incoming envelope"],["1f4e9","envelope with arrow"],["1f4e4","outbox tray"],["1f4e5","inbox tray"],["1f4e6","package"],["1f4eb","closed mailbox with raised flag"],["1f4ea","closed mailbox with lowered flag"],["1f4ec","open mailbox with raised flag"],["1f4ed","open mailbox with lowered flag"],["1f4ee","postbox"],["1f4dd","memo"],["1f4bc","briefcase"],["1f4c1","file folder"],["1f4c2","open file folder"],["1f4c5","calendar"],["1f4c6","tear-off calendar"],["1f4c7","card index"],["1f4c8","chart increasing"],["1f4c9","chart decreasing"],["1f4ca","bar chart"],["1f4cb","clipboard"],["1f4cc","pushpin"],["1f4cd","round pushpin"],["1f4ce","paperclip"],["1f4cf","straight ruler"],["1f4d0","triangular ruler"],["1f512","locked"],["1f513","unlocked"],["1f50f","locked with pen"],["1f510","locked with key"],["1f511","key"],["1f528","hammer"],["1fa93","axe"],["1f4a3","bomb"],["1fa83","boomerang"],["1f3f9","bow and arrow"],["1fa9a","carpentry saw"],["1f527","wrench"],["1fa9b","screwdriver"],["1f529","nut and bolt"],["1f9af","white cane"],["1f517","link"],["1fa9d","hook"],["1f9f0","toolbox"],["1f9f2","magnet"],["1fa9c","ladder"],["1fa8f","shovel"],["1f9ea","test tube"],["1f9eb","petri dish"],["1f9ec","dna"],["1f52c","microscope"],["1f52d","telescope"],["1f4e1","satellite antenna"],["1f489","syringe"],["1fa78","drop of blood"],["1f48a","pill"],["1fa79","adhesive bandage"],["1fa7c","crutch"],["1fa7a","stethoscope"],["1fa7b","x-ray"],["1f6aa","door"],["1f6d7","elevator"],["1fa9e","mirror"],["1fa9f","window"],["1fa91","chair"],["1f6bd","toilet"],["1faa0","plunger"],["1f6bf","shower"],["1f6c1","bathtub"],["1faa4","mouse trap"],["1fa92","razor"],["1f9f4","lotion bottle"],["1f9f7","safety pin"],["1f9f9","broom"],["1f9fa","basket"],["1f9fb","roll of paper"],["1faa3","bucket"],["1f9fc","soap"],["1fae7","bubbles"],["1faa5","toothbrush"],["1f9fd","sponge"],["1f9ef","fire extinguisher"],["1f6d2","shopping cart"],["1f6ac","cigarette"],["1faa6","headstone"],["1f9ff","nazar amulet"],["1faac","hamsa"],["1f5ff","moai"],["1faa7","placard"],["1faaa","identification card"]]},{"n":"Ký hiệu","e":[["1f3e7","ATM sign"],["1f6ae","litter in bin sign"],["1f6b0","potable water"],["267f","wheelchair symbol"],["1f6b9","men’s room"],["1f6ba","women’s room"],["1f6bb","restroom"],["1f6bc","baby symbol"],["1f6be","water closet"],["1f6c2","passport control"],["1f6c3","customs"],["1f6c4","baggage claim"],["1f6c5","left luggage"],["1f6b8","children crossing"],["26d4","no entry"],["1f6ab","prohibited"],["1f6b3","no bicycles"],["1f6ad","no smoking"],["1f6af","no littering"],["1f6b1","non-potable water"],["1f6b7","no pedestrians"],["1f4f5","no mobile phones"],["1f51e","no one under eighteen"],["1f503","clockwise vertical arrows"],["1f504","counterclockwise arrows button"],["1f519","BACK arrow"],["1f51a","END arrow"],["1f51b","ON! arrow"],["1f51c","SOON arrow"],["1f51d","TOP arrow"],["1f6d0","place of worship"],["1f54e","menorah"],["1f52f","dotted six-pointed star"],["1faaf","khanda"],["2648","Aries"],["2649","Taurus"],["264a","Gemini"],["264b","Cancer"],["264c","Leo"],["264d","Virgo"],["264e","Libra"],["264f","Scorpio"],["2650","Sagittarius"],["2651","Capricorn"],["2652","Aquarius"],["2653","Pisces"],["26ce","Ophiuchus"],["1f500","shuffle tracks button"],["1f501","repeat button"],["1f502","repeat single button"],["23e9","fast-forward button"],["23ea","fast reverse button"],["1f53c","upwards button"],["23eb","fast up button"],["1f53d","downwards button"],["23ec","fast down button"],["1f3a6","cinema"],["1f505","dim button"],["1f506","bright button"],["1f4f6","antenna bars"],["1f6dc","wireless"],["1f4f3","vibration mode"],["1f4f4","mobile phone off"],["2795","plus"],["2796","minus"],["2797","divide"],["1f7f0","heavy equals sign"],["2753","red question mark"],["2754","white question mark"],["2755","white exclamation mark"],["2757","red exclamation mark"],["1f4b1","currency exchange"],["1f4b2","heavy dollar sign"],["1f531","trident emblem"],["1f4db","name badge"],["1f530","Japanese symbol for beginner"],["2b55","hollow red circle"],["2705","check mark button"],["274c","cross mark"],["274e","cross mark button"],["27b0","curly loop"],["27bf","double curly loop"],["1fadf","splatter"],["1f51f","keycap 10"],["1f520","input latin uppercase"],["1f521","input latin lowercase"],["1f522","input numbers"],["1f523","input symbols"],["1f524","input latin letters"],["1f18e","AB button (blood type)"],["1f191","CL button"],["1f192","COOL button"],["1f193","FREE button"],["1f194","ID button"],["1f195","NEW button"],["1f196","NG button"],["1f197","OK button"],["1f198","SOS button"],["1f199","UP! button"],["1f19a","VS button"],["1f201","Japanese “here” button"],["1f236","Japanese “not free of charge” button"],["1f22f","Japanese “reserved” button"],["1f250","Japanese “bargain” button"],["1f239","Japanese “discount” button"],["1f21a","Japanese “free of charge” button"],["1f232","Japanese “prohibited” button"],["1f251","Japanese “acceptable” button"],["1f238","Japanese “application” button"],["1f234","Japanese “passing grade” button"],["1f233","Japanese “vacancy” button"],["1f23a","Japanese “open for business” button"],["1f235","Japanese “no vacancy” button"],["1f534","red circle"],["1f7e0","orange circle"],["1f7e1","yellow circle"],["1f7e2","green circle"],["1f535","blue circle"],["1f7e3","purple circle"],["1f7e4","brown circle"],["26ab","black circle"],["26aa","white circle"],["1f7e5","red square"],["1f7e7","orange square"],["1f7e8","yellow square"],["1f7e9","green square"],["1f7e6","blue square"],["1f7ea","purple square"],["1f7eb","brown square"],["2b1b","black large square"],["2b1c","white large square"],["25fe","black medium-small square"],["25fd","white medium-small square"],["1f536","large orange diamond"],["1f537","large blue diamond"],["1f538","small orange diamond"],["1f539","small blue diamond"],["1f53a","red triangle pointed up"],["1f53b","red triangle pointed down"],["1f4a0","diamond with a dot"],["1f518","radio button"],["1f533","white square button"],["1f532","black square button"]]},{"n":"Cờ","e":[["1f3c1","chequered flag"],["1f6a9","triangular flag"],["1f38c","crossed flags"],["1f3f4","black flag"]]}];
+
+let activeEmojiGroup = null; // null = tất cả chủ đề
+
+function buildEmojiPicker() {
+  const all = document.getElementById('emojiAll');
+  all.innerHTML = '';
+  if (!emojiFont) return;
+
+  const map = (emojiFont.tables.cmap && emojiFont.tables.cmap.glyphIndexMap) || {};
+  const available = new Set(Object.keys(map).map(Number));
+
+  const mkBtn = (ch, name) => {
+    const b = document.createElement('button');
+    b.textContent = ch;
+    b.title = (name ? name + ' — ' : '') + 'U+' + ch.codePointAt(0).toString(16).toUpperCase();
+    b.dataset.name = (name || '').toLowerCase();
+    b.addEventListener('click', () => insertIntoText(ch));
+    return b;
+  };
+
+  // gom danh sách từng chủ đề (chỉ emoji có glyph trong font)
+  const sections = [];
+  const inGroups = new Set();
+  EMOJI_GROUPS.forEach(g => {
+    const items = g.e.filter(([hex]) => available.has(parseInt(hex, 16)));
+    if (items.length === 0) return;
+    items.forEach(([hex]) => inGroups.add(parseInt(hex, 16)));
+    sections.push({ name: g.n, items: items.map(([hex, name]) => [parseInt(hex, 16), name]) });
+  });
+
+  // emoji có trong font nhưng không thuộc chủ đề nào
+  const rest = [...available]
+    .filter(cp => !inGroups.has(cp) && isEmojiChar(String.fromCodePoint(cp)))
+    .sort((a, b) => a - b);
+  if (rest.length) sections.push({ name: 'Khác', items: rest.map(cp => [cp, '']) });
+
+  // dựng các khối theo chủ đề
+  let total = 0;
+  sections.forEach(sec => {
+    const wrap = document.createElement('div');
+    wrap.className = 'emoji-section';
+    wrap.dataset.group = sec.name;
+
+    const title = document.createElement('div');
+    title.className = 'emoji-group-title';
+    title.textContent = sec.name + ' (' + sec.items.length + ')';
+    wrap.appendChild(title);
+
+    const grid = document.createElement('div');
+    grid.className = 'emoji-grid';
+    sec.items.forEach(([cp, name]) => { grid.appendChild(mkBtn(String.fromCodePoint(cp), name)); total++; });
+    wrap.appendChild(grid);
+
+    all.appendChild(wrap);
+  });
+
+  // dựng dropdown chọn chủ đề
+  const sel = document.getElementById('emojiGroupSelect');
+  sel.innerHTML = '';
+  const addOpt = (label, value) => {
+    const o = document.createElement('option');
+    o.textContent = label;
+    o.value = value;
+    sel.appendChild(o);
+  };
+  addOpt('Tất cả chủ đề (' + total + ')', '');
+  sections.forEach(sec => addOpt(sec.name + ' (' + sec.items.length + ')', sec.name));
+  sel.value = activeEmojiGroup || '';
+
+  document.getElementById('emojiCount').textContent = total + ' emoji, ' + sections.length + ' chủ đề';
+  applyEmojiFilter();
+}
+
+// Lọc kết hợp: chủ đề đang chọn + từ khoá tìm kiếm
+function applyEmojiFilter() {
+  const q = (document.getElementById('emojiSearch').value || '').trim().toLowerCase();
+  const all = document.getElementById('emojiAll');
+  [...all.querySelectorAll('.emoji-section')].forEach(sec => {
+    const groupOk = !activeEmojiGroup || sec.dataset.group === activeEmojiGroup;
+    let visible = 0;
+    [...sec.querySelectorAll('.emoji-grid button')].forEach(btn => {
+      const hit = groupOk && (!q || (btn.dataset.name && btn.dataset.name.includes(q)));
+      btn.style.display = hit ? '' : 'none';
+      if (hit) visible++;
+    });
+    sec.style.display = visible ? '' : 'none';
+  });
+}
+
+document.getElementById('emojiSearch').addEventListener('input', applyEmojiFilter);
+document.getElementById('emojiGroupSelect').addEventListener('change', (e) => {
+  activeEmojiGroup = e.target.value || null;
+  applyEmojiFilter();
+  document.getElementById('emojiAll').scrollTop = 0;
+});
+
+// ===== Chọn màu nhựa =====
+// Đổi màu chỉ cần cập nhật material của mesh đang có, không phải dựng lại hình học -> tức thì.
+function applyColors() {
+  if (!currentGroup) return;
+  currentGroup.traverse(o => {
+    if (o.isMesh && o.userData.role && COLORS[o.userData.role]) {
+      o.material.color.set(COLORS[o.userData.role]);
+    }
+  });
+}
+
+// Tra tên màu từ mã hex (kèm dòng nhựa) để hiện cho người dùng biết đang chọn gì
+function colorNameOf(hex) {
+  const h = hex.toUpperCase();
+  const hits = [];
+  BAMBU_COLORS.forEach(g => g.colors.forEach(([name, cHex]) => {
+    if (cHex.toUpperCase() === h) hits.push(g.series + ' · ' + name);
+  }));
+  return hits.length ? hits[0] : 'Tuỳ chọn ' + h;
+}
+
+const COLOR_ROLES = {
+  text:  { row: 'rowText',  swatch: 'swText',  name: 'nmText' },
+  emoji: { row: 'rowEmoji', swatch: 'swEmoji', name: 'nmEmoji' },
+  bg:    { row: 'rowBg',    swatch: 'swBg',    name: 'nmBg' }
+};
+
+let openColorRole = null;
+
+function refreshColorRow(role) {
+  const r = COLOR_ROLES[role];
+  document.getElementById(r.swatch).style.background = COLORS[role];
+  document.getElementById(r.name).textContent = colorNameOf(COLORS[role]);
+}
+
+function buildColorPalette() {
+  const pal = document.getElementById('colorPalette');
+  pal.innerHTML = '';
+  BAMBU_COLORS.forEach(group => {
+    const title = document.createElement('div');
+    title.className = 'series-title';
+    title.textContent = group.series + ' (' + group.colors.length + ')';
+    pal.appendChild(title);
+
+    const grid = document.createElement('div');
+    grid.className = 'swatch-grid';
+    group.colors.forEach(([name, hex]) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.style.background = hex;
+      b.title = group.series + ' · ' + name + ' — ' + hex;
+      b.dataset.hex = hex;
+      b.addEventListener('click', () => {
+        if (!openColorRole) return;
+        COLORS[openColorRole] = hex;
+        refreshColorRow(openColorRole);
+        applyColors();
+        markSelectedSwatch();
+      });
+      grid.appendChild(b);
+    });
+    pal.appendChild(grid);
+  });
+}
+
+function markSelectedSwatch() {
+  const cur = openColorRole ? COLORS[openColorRole].toUpperCase() : null;
+  document.querySelectorAll('#colorPalette .swatch-grid button').forEach(b => {
+    b.classList.toggle('sel', cur !== null && b.dataset.hex.toUpperCase() === cur);
+  });
+}
+
+function closeColorPalette() {
+  document.getElementById('colorPalette').hidden = true;
+  Object.values(COLOR_ROLES).forEach(r =>
+    document.getElementById(r.swatch).classList.remove('open'));
+  openColorRole = null;
+}
+
+function openColorPalette(role) {
+  const pal = document.getElementById('colorPalette');
+  if (openColorRole === role && !pal.hidden) { closeColorPalette(); return; }
+  openColorRole = role;
+  Object.entries(COLOR_ROLES).forEach(([k, r]) =>
+    document.getElementById(r.swatch).classList.toggle('open', k === role));
+  // đưa bảng màu xuống ngay dưới dòng đang chọn để khỏi phải tính toạ độ
+  const row = document.getElementById(COLOR_ROLES[role].row);
+  row.parentNode.insertBefore(pal, row.nextSibling);
+  pal.hidden = false;
+  markSelectedSwatch();
+  pal.scrollTop = 0;
+}
+
+Object.entries(COLOR_ROLES).forEach(([role, r]) => {
+  document.getElementById(r.swatch).addEventListener('click', () => openColorPalette(role));
+  refreshColorRow(role);
+});
+
+buildColorPalette();
+
+// ===== Chụp ảnh sản phẩm =====
+document.getElementById('imgScale').addEventListener('input', e => {
+  document.getElementById('imgScaleVal').textContent = e.target.value;
+});
+
+// Chụp canvas thành Blob PNG. Phải tự render ngay trước khi chụp vì vòng lặp
+// animate() có thể vừa xoá đệm; đồng thời tạm nâng pixelRatio để ảnh nét hơn.
+function captureCanvas() {
+  return new Promise((resolve, reject) => {
+    if (!currentGroup) { reject(new Error('Chưa có mô hình nào để chụp.')); return; }
+
+    const transparent = document.getElementById('imgTransparent').checked;
+    const scale = parseFloat(document.getElementById('imgScale').value) || 2;
+
+    const oldRatio = renderer.getPixelRatio();
+    const oldBg = scene.background;
+    const oldClearAlpha = renderer.getClearAlpha();
+
+    try {
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio * scale, 8));
+      if (transparent) {
+        scene.background = null;
+        renderer.setClearAlpha(0);
+      }
+      renderer.render(scene, camera);
+
+      renderer.domElement.toBlob(blob => {
+        // phục hồi trạng thái xem bình thường
+        renderer.setPixelRatio(oldRatio);
+        scene.background = oldBg;
+        renderer.setClearAlpha(oldClearAlpha);
+        renderer.render(scene, camera);
+
+        if (blob) resolve(blob);
+        else reject(new Error('Không tạo được ảnh từ canvas.'));
+      }, 'image/png');
+    } catch (err) {
+      renderer.setPixelRatio(oldRatio);
+      scene.background = oldBg;
+      renderer.setClearAlpha(oldClearAlpha);
+      reject(err);
+    }
+  });
+}
+
+// ===== Chụp hình chiếu thẳng (dùng cho bản vẽ) =====
+// Bản vẽ kỹ thuật cần hình chiếu chính diện, không phải góc xoay tự do của người dùng,
+// nên tạm đưa camera về chính diện và canh vừa khung rồi phục hồi lại y như cũ.
+function captureFrontView(pixelScale, width, height) {
+  return new Promise((resolve, reject) => {
+    if (!currentGroup) { reject(new Error('Chưa có mô hình nào để chụp.')); return; }
+
+    const box = new THREE.Box3().setFromObject(currentGroup);
+    const size = new THREE.Vector3(); box.getSize(size);
+    const center = new THREE.Vector3(); box.getCenter(center);
+
+    const oldPos = camera.position.clone();
+    const oldQuat = camera.quaternion.clone();
+    const oldAspect = camera.aspect;
+    const oldTarget = controls.target.clone();
+    const oldRatio = renderer.getPixelRatio();
+    const oldSize = new THREE.Vector2(); renderer.getSize(oldSize);
+    const oldBg = scene.background;
+    const oldAlpha = renderer.getClearAlpha();
+
+    const restore = () => {
+      camera.position.copy(oldPos);
+      camera.quaternion.copy(oldQuat);
+      camera.aspect = oldAspect;
+      camera.updateProjectionMatrix();
+      controls.target.copy(oldTarget);
+      renderer.setPixelRatio(oldRatio);
+      renderer.setSize(oldSize.x, oldSize.y);
+      scene.background = oldBg;
+      renderer.setClearAlpha(oldAlpha);
+      renderer.render(scene, camera);
+    };
+
+    try {
+      renderer.setPixelRatio(pixelScale);
+      renderer.setSize(width, height, false);
+      camera.aspect = width / height;
+
+      // khoảng cách để mô hình vừa khung theo cả hai chiều
+      const fov = camera.fov * Math.PI / 180;
+      const distH = (size.y / 2) / Math.tan(fov / 2);
+      const distW = (size.x / 2) / Math.tan(fov / 2) / camera.aspect;
+      const dist = Math.max(distH, distW) * 1.12 + size.z;
+
+      camera.position.set(center.x, center.y, center.z + dist);
+      camera.up.set(0, 1, 0);
+      camera.lookAt(center);
+      camera.updateProjectionMatrix();
+
+      scene.background = null;      // nền trong suốt để ghép lên tờ vẽ
+      renderer.setClearAlpha(0);
+      renderer.render(scene, camera);
+
+      renderer.domElement.toBlob(blob => {
+        restore();
+        if (blob) resolve({ blob, size, tris: countTriangles() });
+        else reject(new Error('Không tạo được ảnh từ canvas.'));
+      }, 'image/png');
+    } catch (err) {
+      restore();
+      reject(err);
+    }
+  });
+}
+
+function countTriangles() {
+  let t = 0;
+  if (!currentGroup) return 0;
+  currentGroup.traverse(o => {
+    if (o.geometry && o.geometry.attributes && o.geometry.attributes.position) {
+      t += o.geometry.attributes.position.count / 3;
+    }
+  });
+  return Math.round(t);
+}
+
+// Thu thập thông số hiện tại để đưa vào bảng
+function collectSpecs(size) {
+  const val = id => document.getElementById(id).value;
+  const on = id => document.getElementById(id).checked;
+  const ringOn = on('ringEnabled') && on('bgEnabled');
+  const nm = id => document.getElementById(id).textContent;
+  const sideText = { left: 'Bên trái', right: 'Bên phải', top: 'Phía trên', bottom: 'Phía dưới' };
+
+  const rows = [
+    ['Nội dung', document.getElementById('textInput').value],
+    ['Kích thước tổng', size.x.toFixed(1) + ' × ' + size.y.toFixed(1) + ' × ' + size.z.toFixed(1) + ' mm'],
+    ['Cỡ chữ / emoji', val('textFontSize') + ' / ' + val('emojiFontSize')],
+    ['Độ đùn chữ', val('depth') + ' mm'],
+    ['Bevel', document.getElementById('bevel').selectedOptions[0].textContent],
+    ['Khoảng cách chữ–emoji', val('gap') + ' mm'],
+    ['Chỉnh cao emoji', val('emojiNudge') + ' mm'],
+    ['Nền', on('bgEnabled') ? 'Có — offset ' + val('bgOffset') + ' mm, dày ' + val('bgDepth') + ' mm' : 'Không'],
+    ['Lỗ móc khoá', ringOn
+      ? 'Ø' + val('ringHole') + ' mm, thành ' + val('ringWall') + ' mm'
+      : 'Không'],
+    ['Vị trí lỗ', ringOn
+      ? (sideText[document.getElementById('ringSide').value] || '') + ', ' + val('ringPos') + '%'
+        + (parseFloat(val('ringInset')) ? ', ăn sâu +' + val('ringInset') + ' mm' : '')
+      : '—'],
+  ];
+  const colors = [
+    ['Màu chữ', COLORS.text, nm('nmText')],
+    ['Màu emoji', COLORS.emoji, nm('nmEmoji')],
+    ['Màu nền', COLORS.bg, nm('nmBg')]
+  ];
+  return { rows, colors };
+}
+
+// Ghép hình chiếu + đường kích thước + bảng thông số thành một tờ bản vẽ
+async function buildTechnicalDrawing(scale) {
+  if (!currentGroup) throw new Error('Chưa có mô hình nào để chụp.');
+
+  // Đo mô hình trước để khung hình co theo tỉ lệ thật, tránh thừa khoảng trống
+  // khi nhãn rất ngang (kiểu 200×80mm) hoặc rất cao.
+  const preBox = new THREE.Box3().setFromObject(currentGroup);
+  const preSize = new THREE.Vector3(); preBox.getSize(preSize);
+  const aspect = (preSize.x > 0 && preSize.y > 0) ? preSize.x / preSize.y : 2;
+
+  const SHEET_W = 1400;
+  const VIEW_W = 780;
+  const VIEW_H = Math.max(240, Math.min(620, Math.round(VIEW_W / aspect * 1.12)));
+  // Chiều cao tờ vẽ phải đủ cho CẢ hình chiếu LẪN bảng thông số (bảng cần ~640px).
+  // Nếu chỉ tính theo hình chiếu, nhãn rất ngang sẽ làm tờ vẽ co lại và bảng tràn xuống chân trang.
+  const SHEET_H = Math.max(870, VIEW_H + 350);
+
+  const { blob, size, tris } = await captureFrontView(scale, VIEW_W * scale, VIEW_H * scale);
+  const img = await (window.createImageBitmap
+    ? createImageBitmap(blob)
+    : new Promise((res, rej) => {
+        const im = new Image();
+        im.onload = () => res(im);
+        im.onerror = () => rej(new Error('Không đọc được ảnh chụp.'));
+        im.src = URL.createObjectURL(blob);
+      }));
+
+  const cv = document.createElement('canvas');
+  cv.width = SHEET_W * scale;
+  cv.height = SHEET_H * scale;
+  const ctx = cv.getContext('2d');
+  ctx.scale(scale, scale);
+
+  const INK = '#1c1f24', SUB = '#6b7280', LINE = '#9ca3af';
+  ctx.textBaseline = 'top';
+
+  // tờ giấy + khung
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, SHEET_W, SHEET_H);
+  ctx.strokeStyle = INK; ctx.lineWidth = 1.5;
+  ctx.strokeRect(18, 18, SHEET_W - 36, SHEET_H - 36);
+  ctx.strokeStyle = LINE; ctx.lineWidth = 0.8;
+  ctx.strokeRect(26, 26, SHEET_W - 52, SHEET_H - 52);
+
+  // tiêu đề
+  const label = document.getElementById('textInput').value;
+  ctx.fillStyle = INK;
+  ctx.font = '600 26px -apple-system, "Segoe UI", Roboto, sans-serif';
+  ctx.fillText('BẢN VẼ NHÃN IN 3D', 46, 44);
+  ctx.font = '15px -apple-system, "Segoe UI", Roboto, sans-serif';
+  ctx.fillStyle = SUB;
+  ctx.fillText('Nội dung: ' + label + '     ·     Đơn vị: mm     ·     Hình chiếu chính diện', 46, 78);
+  ctx.strokeStyle = LINE; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(46, 104); ctx.lineTo(SHEET_W - 46, 104); ctx.stroke();
+
+  // ---- vùng hình chiếu ----
+  const vx = 86, vy = 150;
+  ctx.fillStyle = '#f3f4f6';
+  ctx.fillRect(vx, vy, VIEW_W, VIEW_H);
+  ctx.strokeStyle = LINE; ctx.lineWidth = 0.8;
+  ctx.strokeRect(vx, vy, VIEW_W, VIEW_H);
+  ctx.drawImage(img, vx, vy, VIEW_W, VIEW_H);
+
+  // ---- đường kích thước ----
+  // Mô hình được canh vừa khung với lề 12% nên phần hình thực chiếm khoảng giữa;
+  // tính lại vùng hình thực để mũi kích thước trỏ đúng mép vật thể.
+  const fit = Math.min(VIEW_W / size.x, VIEW_H / size.y) / 1.12;
+  const drawW = size.x * fit, drawH = size.y * fit;
+  const dx0 = vx + (VIEW_W - drawW) / 2, dx1 = dx0 + drawW;
+  const dy0 = vy + (VIEW_H - drawH) / 2, dy1 = dy0 + drawH;
+
+  const arrow = (x, y, dir) => {
+    ctx.beginPath();
+    if (dir === 'l') { ctx.moveTo(x, y); ctx.lineTo(x + 7, y - 3.5); ctx.lineTo(x + 7, y + 3.5); }
+    if (dir === 'r') { ctx.moveTo(x, y); ctx.lineTo(x - 7, y - 3.5); ctx.lineTo(x - 7, y + 3.5); }
+    if (dir === 'u') { ctx.moveTo(x, y); ctx.lineTo(x - 3.5, y + 7); ctx.lineTo(x + 3.5, y + 7); }
+    if (dir === 'd') { ctx.moveTo(x, y); ctx.lineTo(x - 3.5, y - 7); ctx.lineTo(x + 3.5, y - 7); }
+    ctx.closePath(); ctx.fill();
+  };
+
+  ctx.strokeStyle = '#c2410c'; ctx.fillStyle = '#c2410c'; ctx.lineWidth = 1;
+  ctx.font = '600 14px -apple-system, "Segoe UI", Roboto, sans-serif';
+
+  // kích thước ngang (bên dưới)
+  const dimY = vy + VIEW_H + 26;
+  ctx.setLineDash([4, 3]);
+  ctx.beginPath(); ctx.moveTo(dx0, dy1); ctx.lineTo(dx0, dimY + 6); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(dx1, dy1); ctx.lineTo(dx1, dimY + 6); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.beginPath(); ctx.moveTo(dx0, dimY); ctx.lineTo(dx1, dimY); ctx.stroke();
+  arrow(dx0, dimY, 'l'); arrow(dx1, dimY, 'r');
+  const wTxt = size.x.toFixed(1) + ' mm';
+  const wW = ctx.measureText(wTxt).width;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect((dx0 + dx1) / 2 - wW / 2 - 5, dimY - 9, wW + 10, 18);
+  ctx.fillStyle = '#c2410c';
+  ctx.fillText(wTxt, (dx0 + dx1) / 2 - wW / 2, dimY - 7);
+
+  // kích thước dọc (bên trái)
+  const dimX = vx - 34;
+  ctx.setLineDash([4, 3]);
+  ctx.beginPath(); ctx.moveTo(dx0, dy0); ctx.lineTo(dimX - 6, dy0); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(dx0, dy1); ctx.lineTo(dimX - 6, dy1); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.beginPath(); ctx.moveTo(dimX, dy0); ctx.lineTo(dimX, dy1); ctx.stroke();
+  arrow(dimX, dy0, 'u'); arrow(dimX, dy1, 'd');
+  const hTxt = size.y.toFixed(1) + ' mm';
+  ctx.save();
+  ctx.translate(dimX - 4, (dy0 + dy1) / 2);
+  ctx.rotate(-Math.PI / 2);
+  const hW = ctx.measureText(hTxt).width;
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(-hW / 2 - 5, -9, hW + 10, 18);
+  ctx.fillStyle = '#c2410c'; ctx.fillText(hTxt, -hW / 2, -8);
+  ctx.restore();
+
+  // ---- bảng thông số ----
+  const { rows, colors } = collectSpecs(size);
+  const tx = vx + VIEW_W + 40, tw = SHEET_W - tx - 56;
+  let ty = vy - 4;
+
+  ctx.fillStyle = INK;
+  ctx.font = '600 16px -apple-system, "Segoe UI", Roboto, sans-serif';
+  ctx.fillText('THÔNG SỐ', tx, ty);
+  ty += 26;
+  ctx.strokeStyle = LINE; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(tx + tw, ty); ctx.stroke();
+  ty += 10;
+
+  const wrapText = (text, maxW) => {
+    const words = String(text).split(' ');
+    const lines = []; let cur = '';
+    words.forEach(w => {
+      const t = cur ? cur + ' ' + w : w;
+      if (ctx.measureText(t).width > maxW && cur) { lines.push(cur); cur = w; }
+      else cur = t;
+    });
+    if (cur) lines.push(cur);
+    return lines;
+  };
+
+  rows.forEach(([k, v], i) => {
+    if (i % 2 === 0) { ctx.fillStyle = '#f9fafb'; ctx.fillRect(tx - 6, ty - 4, tw + 12, 30); }
+    ctx.font = '13px -apple-system, "Segoe UI", Roboto, sans-serif';
+    ctx.fillStyle = SUB;
+    ctx.fillText(k, tx, ty + 4);
+    ctx.font = '600 13px -apple-system, "Segoe UI", Roboto, sans-serif';
+    ctx.fillStyle = INK;
+    const lines = wrapText(v, tw - 160);
+    lines.slice(0, 2).forEach((ln, j) => ctx.fillText(ln, tx + 160, ty + 4 + j * 15));
+    ty += lines.length > 1 ? 42 : 30;
+  });
+
+  ty += 12;
+  ctx.font = '600 16px -apple-system, "Segoe UI", Roboto, sans-serif';
+  ctx.fillStyle = INK;
+  ctx.fillText('MÀU NHỰA', tx, ty);
+  ty += 26;
+  ctx.strokeStyle = LINE; ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(tx + tw, ty); ctx.stroke();
+  ty += 12;
+
+  colors.forEach(([k, hex, name]) => {
+    ctx.fillStyle = hex;
+    ctx.fillRect(tx, ty, 26, 20);
+    ctx.strokeStyle = '#9ca3af'; ctx.lineWidth = 1;
+    ctx.strokeRect(tx, ty, 26, 20);
+    ctx.font = '13px -apple-system, "Segoe UI", Roboto, sans-serif';
+    ctx.fillStyle = SUB; ctx.fillText(k, tx + 36, ty + 3);
+    ctx.font = '600 12px -apple-system, "Segoe UI", Roboto, sans-serif';
+    ctx.fillStyle = INK;
+    ctx.fillText(name + '  ' + hex.toUpperCase(), tx + 36, ty + 19);
+    ty += 44;
+  });
+
+  // ---- chân trang ----
+  const now = new Date();
+  const stamp = now.toLocaleDateString('vi-VN') + ' ' +
+                now.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+  ctx.font = '12px -apple-system, "Segoe UI", Roboto, sans-serif';
+  ctx.fillStyle = SUB;
+  ctx.fillText('Ngày tạo: ' + stamp, 46, SHEET_H - 52);
+  ctx.fillText('Số tam giác: ' + tris.toLocaleString('vi-VN') + '   ·   In FDM, đơn vị mm', 46, SHEET_H - 36);
+  const note = 'Kích thước lấy từ mô hình 3D. Màu là màu tham chiếu trên màn hình, cần đối chiếu cuộn nhựa thật.';
+  const nW = ctx.measureText(note).width;
+  ctx.fillText(note, SHEET_W - 46 - nW, SHEET_H - 36);
+
+  return new Promise((res, rej) => {
+    cv.toBlob(b => b ? res(b) : rej(new Error('Không tạo được bản vẽ.')), 'image/png');
+  });
+}
+
+// Chọn kiểu ảnh xuất ra tuỳ ô "Kèm bảng thông số"
+function captureForOutput() {
+  const scale = parseFloat(document.getElementById('imgScale').value) || 2;
+  if (document.getElementById('imgDrawing').checked) return buildTechnicalDrawing(scale);
+  return captureCanvas();
+}
+
+document.getElementById('saveImgBtn').addEventListener('click', async () => {
+  setStatus('Đang chụp ảnh…');
+  try {
+    const blob = await captureForOutput();
+    const drawing = document.getElementById('imgDrawing').checked;
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = drawing ? 'ban-ve-nhan-3d.png' : 'label-preview.png';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setTimeout(() => URL.revokeObjectURL(link.href), 10000);
+    setStatus('✓ Đã lưu ' + link.download + ' (' + Math.round(blob.size / 1024) + ' KB) trong thư mục Tải xuống.');
+  } catch (err) {
+    setStatus('Lỗi khi lưu ảnh: ' + err.message, true);
+    console.error(err);
+  }
+});
+
+document.getElementById('exportBtn').addEventListener('click', () => {
+  if (!currentGroup) {
+    setStatus('Chưa có mô hình nào để xuất.', true);
+    return;
+  }
+
+  // Đếm tam giác để báo trước cho người dùng
+  let tris = 0;
+  currentGroup.traverse(o => {
+    if (o.geometry && o.geometry.attributes && o.geometry.attributes.position) {
+      tris += o.geometry.attributes.position.count / 3;
+    }
+  });
+  setStatus('Đang xuất STL (' + Math.round(tris).toLocaleString('vi-VN') + ' tam giác)…');
+
+  // Nhường 1 nhịp cho trình duyệt vẽ lại dòng trạng thái rồi mới xuất
+  setTimeout(() => {
+    try {
+      const exporter = new THREE.STLExporter();
+      // BẮT BUỘC dùng STL nhị phân: bản ASCII cho cùng mô hình này nặng gấp ~5.4 lần
+      // (16-40 MB) và được tạo bằng cách nối chuỗi từng tam giác, đủ để làm tab
+      // hết bộ nhớ và trắng màn hình.
+      const data = exporter.parse(currentGroup, { binary: true });
+      const blob = new Blob([data], { type: 'model/stl' });
+
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = 'label.stl';
+      document.body.appendChild(link); // một số trình duyệt cần thẻ nằm trong DOM
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(link.href), 10000); // giải phóng bộ nhớ
+
+      setStatus('✓ Đã tải label.stl (' + (blob.size / 1024 / 1024).toFixed(2) +
+                ' MB) — xem trong thư mục Tải xuống.');
+    } catch (err) {
+      setStatus('Lỗi khi xuất STL: ' + err.message, true);
+      console.error(err);
+    }
+  }, 30);
+});
+
+// ===== Khởi động: nạp cấu hình (giới hạn/màu/font) từ server rồi dựng luôn =====
+
+// Bảng ánh xạ id slider -> id span hiển thị giá trị (ringInset lệch tên: span là ringDepthVal)
+const LIMIT_SPAN_MAP = {
+  gap: 'gapVal', depth: 'depthVal', textFontSize: 'textSizeVal', emojiFontSize: 'emojiSizeVal',
+  emojiNudge: 'emojiNudgeVal', bgOffset: 'bgOffsetVal', bgDepth: 'bgDepthVal',
+  ringHole: 'ringHoleVal', ringWall: 'ringWallVal', ringPos: 'ringPosVal', ringInset: 'ringDepthVal'
+};
+
+function applyLimits(limits) {
+  Object.entries(limits).forEach(([key, cfg]) => {
+    const input = document.getElementById(key);
+    if (!input) return;
+    input.min = cfg.min;
+    input.max = cfg.max;
+    input.step = cfg.step;
+    input.value = cfg.default;
+    const spanId = LIMIT_SPAN_MAP[key];
+    const span = spanId && document.getElementById(spanId);
+    if (span) span.textContent = cfg.default;
+  });
+}
+
+function populateFontSelect(selectEl, fontsForRole) {
+  selectEl.innerHTML = '';
+  fontsForRole.forEach(f => {
+    const opt = document.createElement('option');
+    opt.value = String(f.id);
+    opt.textContent = f.name + (f.isDefault ? ' (mặc định)' : '');
+    selectEl.appendChild(opt);
+  });
+}
+
+// Nạp 1 font từ server (khác wireFontInput ở chỗ nguồn là fetch(url) thay vì FileReader)
+async function setFontFromServer(role, fontMeta) {
+  const label = role === 'emoji' ? 'EMOJI' : 'CHỮ';
+  try {
+    setStatus(`Đang nạp font ${label}: ${fontMeta.name} ...`);
+    const res = await fetch(fontMeta.url);
+    if (!res.ok) throw new Error('Không tải được font từ server (HTTP ' + res.status + ').');
+    const buf = await res.arrayBuffer();
+    if (typeof opentype === 'undefined') throw new Error('Thư viện opentype.js chưa được nạp (kiểm tra mạng/CDN).');
+    const parsed = opentype.parse(buf);
+    if (role === 'emoji') { emojiFont = parsed; buildEmojiPicker(); } else { textFont = parsed; }
+    setStatus(`✓ Đã nạp font ${label}: ${fontMeta.name} (${parsed.glyphs.length} glyphs).`);
+    doRender();
+  } catch (err) {
+    setStatus(`LỖI nạp font ${label}: ` + err.message, true);
+    console.error('Font load error:', err);
+  }
+}
+
+async function boot() {
+  const textSelect = document.getElementById('textFontSelect');
+  const emojiSelect = document.getElementById('emojiFontSelect');
+
+  try {
+    const res = await fetch('/api/config');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const cfg = await res.json();
+
+    if (cfg.limits) applyLimits(cfg.limits);
+
+    if (Array.isArray(cfg.colors) && cfg.colors.length) BAMBU_COLORS = cfg.colors;
+    buildColorPalette();
+    Object.keys(COLOR_ROLES).forEach(role => refreshColorRow(role));
+
+    const fonts = Array.isArray(cfg.fonts) ? cfg.fonts : [];
+    const textFonts = fonts.filter(f => f.role === 'text');
+    const emojiFonts = fonts.filter(f => f.role === 'emoji');
+    populateFontSelect(textSelect, textFonts);
+    populateFontSelect(emojiSelect, emojiFonts);
+
+    const defaultText = textFonts.find(f => f.isDefault) || textFonts[0];
+    const defaultEmoji = emojiFonts.find(f => f.isDefault) || emojiFonts[0];
+    if (defaultText) { textSelect.value = String(defaultText.id); await setFontFromServer('text', defaultText); }
+    if (defaultEmoji) { emojiSelect.value = String(defaultEmoji.id); await setFontFromServer('emoji', defaultEmoji); }
+
+    textSelect.addEventListener('change', () => {
+      const f = textFonts.find(x => String(x.id) === textSelect.value);
+      if (f) setFontFromServer('text', f);
+    });
+    emojiSelect.addEventListener('change', () => {
+      const f = emojiFonts.find(x => String(x.id) === emojiSelect.value);
+      if (f) setFontFromServer('emoji', f);
+    });
+  } catch (err) {
+    setStatus('LỖI nạp cấu hình từ server: ' + err.message + ' — dùng giá trị mặc định có sẵn trong trang, hãy nạp font thủ công ở phần "Chọn font".', true);
+    console.error('Config load error:', err);
+  }
+}
+
+initScene();
+window.addEventListener('load', boot);
+
+</script>
+</body>
+</html>

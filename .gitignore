@@ -141,3 +141,10 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# === Printer3D-specific ===
+.DS_Store
+.claude/
+
+# Du lieu runtime cua server (font upload + session), tu tao luc chay, khong commit
+server/data/

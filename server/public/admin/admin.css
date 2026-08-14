@@ -1,0 +1,104 @@
+:root { color-scheme: dark; }
+* { box-sizing: border-box; }
+body {
+  margin: 0; font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: #14161a; color: #eee;
+}
+a { color: #f2a65a; }
+
+/* ----- Trang dang nhap ----- */
+.login-wrap {
+  min-height: 100vh; display: flex; align-items: center; justify-content: center;
+}
+.login-card {
+  width: 340px; background: #1c1f24; border: 1px solid #2c2f35; border-radius: 8px;
+  padding: 28px;
+}
+.login-card h1 { font-size: 18px; margin: 0 0 20px; color: #f2a65a; }
+
+/* ----- Layout dashboard ----- */
+.topbar {
+  position: fixed; top: 0; left: 0; right: 0; height: 56px;
+  background: #1c1f24; border-bottom: 1px solid #2c2f35;
+  display: flex; align-items: center; justify-content: space-between; padding: 0 20px;
+  z-index: 10;
+}
+.topbar h1 { font-size: 16px; margin: 0; color: #f2a65a; }
+.topbar .who { font-size: 12px; color: #999; margin-right: 12px; }
+
+.layout { display: flex; padding-top: 56px; min-height: 100vh; }
+.sidenav {
+  width: 220px; flex: none; background: #1c1f24; border-right: 1px solid #2c2f35;
+  height: calc(100vh - 56px); position: sticky; top: 56px; padding: 14px 0;
+}
+.sidenav button {
+  display: block; width: 100%; text-align: left; padding: 12px 20px; background: none;
+  border: none; color: #ccc; font-size: 14px; cursor: pointer; border-left: 3px solid transparent;
+}
+.sidenav button:hover { background: #23272e; }
+.sidenav button.active { color: #f2a65a; border-left-color: #f2a65a; background: #23272e; }
+
+.content { flex: 1; padding: 24px 32px; max-width: 1000px; }
+.panel-section { display: none; }
+.panel-section.active { display: block; }
+.panel-section h2 { font-size: 18px; margin: 0 0 6px; color: #f2a65a; }
+.panel-section .desc { font-size: 13px; color: #888; margin: 0 0 18px; }
+
+/* ----- Form controls chung ----- */
+label { display: block; font-size: 12px; color: #aaa; margin-bottom: 4px; }
+input[type=text], input[type=password], input[type=number], input[type=file], select {
+  width: 100%; padding: 7px 9px; background: #101216; color: #eee;
+  border: 1px solid #333; border-radius: 4px; font-size: 13px;
+}
+input[type=color] {
+  width: 44px; height: 30px; padding: 2px; background: #101216; border: 1px solid #333;
+  border-radius: 4px; cursor: pointer;
+}
+button.btn {
+  padding: 8px 14px; border: none; border-radius: 4px; cursor: pointer; font-weight: 600;
+  font-size: 13px; background: #2c2f35; color: #eee;
+}
+button.btn:hover { background: #383d45; }
+button.btn.primary { background: #f2a65a; color: #111; }
+button.btn.primary:hover { background: #ffb96f; }
+button.btn.danger { background: #4a2323; color: #f5b8b8; }
+button.btn.danger:hover { background: #632c2c; }
+button.btn.small { padding: 4px 9px; font-size: 12px; }
+button.link-btn {
+  background: none; border: none; color: #f2a65a; cursor: pointer; font-size: 13px; padding: 0;
+}
+
+.error-msg { color: #e06c6c; font-size: 13px; margin-top: 10px; min-height: 18px; }
+.ok-msg { color: #6ec36e; font-size: 13px; margin-top: 10px; min-height: 18px; }
+
+/* ----- Bang ----- */
+table.grid { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.grid th, table.grid td { padding: 8px 10px; border-bottom: 1px solid #23272e; text-align: left; }
+table.grid th { color: #999; font-weight: 600; font-size: 11px; text-transform: uppercase; }
+table.grid input { width: 100%; }
+table.grid td.num { width: 90px; }
+table.grid td.actions { width: 90px; white-space: nowrap; }
+
+.series-block { margin-bottom: 22px; }
+.series-block h3 {
+  font-size: 13px; color: #f2a65a; margin: 0 0 8px; padding-bottom: 6px;
+  border-bottom: 1px solid #23272e;
+}
+
+.add-row {
+  display: flex; gap: 8px; align-items: end; margin-top: 10px; padding-top: 10px;
+  border-top: 1px dashed #2c2f35; flex-wrap: wrap;
+}
+.add-row > div { flex: 1; min-width: 110px; }
+.add-row > div.grow-2 { flex: 2; }
+
+.upload-form {
+  display: flex; gap: 12px; align-items: end; flex-wrap: wrap; margin-bottom: 20px;
+  padding: 14px; background: #1c1f24; border: 1px solid #2c2f35; border-radius: 6px;
+}
+.upload-form > div { flex: 1; min-width: 140px; }
+
+.hint { font-size: 11px; color: #777; margin-top: 4px; line-height: 1.4; }
+
+.password-form { max-width: 320px; }
+.password-form label { margin-top: 12px; }

@@ -1,0 +1,48 @@
+services:
+  db:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  app:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PORT: 7788
+      NODE_ENV: production
+      # true CHỈ khi có nginx/reverse proxy chấm dứt HTTPS phía trước — nếu bật true mà
+      # vẫn truy cập qua HTTP thường thì cookie session sẽ không bao giờ được trình
+      # duyệt gửi lại, khiến đăng nhập luôn "thành công" nhưng không giữ được phiên.
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      SESSION_SECRET: ${SESSION_SECRET}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      FONTS_MAX_TOTAL_MB: ${FONTS_MAX_TOTAL_MB:-200}
+      MYSQL_HOST: db
+      MYSQL_PORT: 3306
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+    ports:
+      - "${APP_PORT:-7788}:7788"
+    volumes:
+      - app_data:/app/server/data
+
+volumes:
+  mysql_data:
+  app_data:

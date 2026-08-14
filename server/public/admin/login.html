@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<title>Đăng nhập quản trị</title>
+<link rel="stylesheet" href="admin.css">
+</head>
+<body>
+
+<div class="login-wrap">
+  <form class="login-card" id="loginForm">
+    <h1>Đăng nhập quản trị</h1>
+
+    <label>Tên đăng nhập</label>
+    <input type="text" id="username" name="username" autocomplete="username" required>
+
+    <label style="margin-top:12px;">Mật khẩu</label>
+    <input type="password" id="password" name="password" autocomplete="current-password" required>
+
+    <button type="submit" class="btn primary" style="width:100%; margin-top:18px;">Đăng nhập</button>
+    <div class="error-msg" id="loginError"></div>
+  </form>
+</div>
+
+<script>
+const form = document.getElementById('loginForm');
+const errEl = document.getElementById('loginError');
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  errEl.textContent = '';
+  const username = document.getElementById('username').value;
+  const password = document.getElementById('password').value;
+
+  try {
+    const res = await fetch('/api/admin/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Đăng nhập thất bại.');
+    window.location.href = 'index.html';
+  } catch (err) {
+    errEl.textContent = err.message;
+  }
+});
+
+// Da dang nhap san thi vao thang dashboard, khoi phai dang nhap lai
+fetch('/api/admin/session').then(r => { if (r.ok) window.location.href = 'index.html'; });
+</script>
+</body>
+</html>
